@@ -3,19 +3,21 @@ pragma solidity ^0.8.13;
 
 import {ERC20} from "openzeppelin-contracts/contracts/token/ERC20/ERC20.sol";
 import {IERC20} from "openzeppelin-contracts/contracts/token/ERC20/IERC20.sol";
-import {Ownable} from "openzeppelin-contracts/contracts/access/Ownable.sol";
 import {SafeMath} from "openzeppelin-contracts/contracts/utils/math/SafeMath.sol";
 import {IUniswapV2Factory} from "v2-core/interfaces/IUniswapV2Factory.sol";
 import {IUniswapV2Router02} from "v2-periphery/interfaces/IUniswapV2Router02.sol";
 
-contract Mucus is ERC20, Ownable {
+contract Mucus is ERC20 {
     using SafeMath for uint256;
 
     uint256 private tokenSupply = 9393 * 1e8 * 1e18;
-    uint256 public teamFee = 39; // 3.9%
-    uint256 public stakerFee = 29; // 2.9%
-    uint256 public totalFee = teamFee + stakerFee;
-    uint256 public denominator = 1000;
+    uint256 public teamFee = 2;
+    uint256 public stakerFee = 2;
+    uint256 public liquidityFee = 2;
+    uint256 public totalFee = teamFee + stakerFee + liquidityFee;
+    uint256 public denominator = 100;
+
+    address _owner;
 
     // swapping back logic
     uint256 public swapTokensAtAmount = 278787 * 1e18;
@@ -26,27 +28,8 @@ contract Mucus is ERC20, Ownable {
     mapping(address => bool) private isFeeExempt;
     address teamWallet;
 
-    // staking shit
-    struct Staker {
-        uint256 totalAmount;
-        uint256 dogFactionAmount;
-        uint256 frogFactionAmount;
-        uint256 previousDividendsPerShare;
-        uint256 lockingEndDate;
-    }
-
-    enum Faction {
-        DOG,
-        FROG
-    }
-
-    uint256 public totalDogFactionAmount;
-    uint256 public totalFrogFactionAmount;
-    uint256 public dividendsPerShare;
-    mapping(address => Staker) public stakers;
-    uint256 public totalStakedAmount;
-    IERC20 public LPToken;
-
+    IDividendsPairStaking public dividendsPairStaking;
+    ISwampAndYArd public swampAndYard;
     IUniswapV2Router02 public router;
     address public pair;
 
@@ -54,11 +37,22 @@ contract Mucus is ERC20, Ownable {
     event StakeRemoved(address indexed staker, uint256 amount);
     event DividendsPerShareUpdated(uint256 dividendsPerShare);
 
-    constructor() ERC20("Mucus", "MUCUS") {
+    constructor(address _LPStaking) ERC20("Mucus", "MUCUS") {
         router = IUniswapV2Router02(0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D);
-        LPToken = IERC20(0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D);
         pair = IUniswapV2Factory(router.factory()).createPair(address(this), router.WETH());
+        dividendsPairStaking = new DividendsPairStaking(msg.sender, pair);
+
+        _owner = msg.sender;
         _mint(msg.sender, tokenSupply);
+    }
+
+    modifier onlyOwner() {
+        require(msg.sender == _owner);
+        _;
+    }
+
+    function mint(address to, uint256 amount) public {
+        _mint(to, amount);
     }
 
     // Time based rewards?
@@ -80,7 +74,10 @@ contract Mucus is ERC20, Ownable {
             swapping = false;
         }
 
-        uint256 fees = 0;
+        if (block.timestamp >= dividendsPairStaking.nextSoupCycle()) {
+            dividendsPairStaking.cycleSoup();
+        }
+
         // don't run this if it's currently swapping, if either the sender or the reciever is fee exempt, or if it's not a buy or sell
         if (!swapping && !(isFeeExempt[from] || isFeeExempt[to]) && (pair == from || pair == to)) {
             fees = amount.mul(totalFee).div(denominator);
@@ -97,13 +94,25 @@ contract Mucus is ERC20, Ownable {
     function swapBack() private {
         uint256 currentBalance = balanceOf(address(this));
         uint256 tokensForStakers = currentBalance.mul(stakerFee).div(totalFee);
-        uint256 tokensForTeam = currentBalance.sub(tokensForStakers);
+        uint256 tokensForliquidity = currentBalance.mul(liquidityFee / 2).div(totalFee);
+        uint256 tokensToSwapForEth = currentBalance.sub(tokensForStakers).sub(tokensForliquidity);
 
-        calculateRewards(tokensForStakers);
-        swapTokensForEth(tokensForTeam);
+        uint256 initialEthBalance = address(this).balance;
+        swapTokensForEth(tokensToSwapForEth);
+        uint256 ethBalance = address(this).balance - initialEthBalance;
 
-        (bool success,) = address(teamWallet).call{value: address(this).balance}("");
-        require(success, "Failed to send ETH to team wallet");
+        uint256 ethForLiquidity = ethBalance.mul(liquidityFee / 2).div((liquidityFee / 2) + teamFee);
+        uint256 ethForTeam = ethBalance.sub(ethForLiquidity);
+
+        addLiquidity(tokensForliquidity, ethForLiquidity);
+
+        bool stakersTransferSuccess = super.transfer(address(diviends), tokensForStakers);
+        if (stakersTransferSuccess) {
+            dividendsPairStaking.deposit(tokensForStakers);
+        }
+
+        (bool teamTransferSuccess,) = address(teamWallet).call{value: ethForTeam}("");
+        require(teamTransferSuccess, "Failed to send ETH to team wallet");
 
         emit DividendsPerShareUpdated(dividendsPerShare);
     }
@@ -126,111 +135,24 @@ contract Mucus is ERC20, Ownable {
         );
     }
 
-    function addStake(uint256 amount, Faction faction) external {
-        require(amount > 0, "Cannot stake 0 tokens");
+    function addLiquidity(uint256 tokenAmount, uint256 ethAmount) private {
+        // approve token transfer to cover all possible scenarios
+        _approve(address(this), address(router), tokenAmount);
 
-        // This is equivalent to taring it to 0
-        // This makes it so that the math to calculate the dps stays consistent
-        if (stakers[msg.sender].totalAmount > 0) {
-            distributeDividend(msg.sender);
-        }
-
-        if (stakers[msg.sender].totalAmount == 0) {
-            stakers[msg.sender] = Staker(amount, dividendsPerShare, 0, 0, block.timestamp + 1 weeks);
-        } else {
-            stakers[msg.sender].totalAmount += amount;
-        }
-
-        if (faction == Faction.DOG) {
-            stakers[msg.sender].dogFactionAmount += amount;
-            totalDogFactionAmount += amount;
-        } else {
-            stakers[msg.sender].frogFactionAmount += amount;
-            totalFrogFactionAmount += amount;
-        }
-        totalStakedAmount += amount;
-
-        LPToken.transferFrom(msg.sender, address(this), amount);
-
-        emit StakeAdded(msg.sender, amount);
-    }
-
-    function removeStake(uint256 amount, Faction faction) external {
-        require(amount >= stakers[msg.sender].totalAmount, "Cannot unstake more than you have staked");
-        require(
-            faction != Faction.DOG || stakers[msg.sender].dogFactionAmount >= amount,
-            "Cannot unstake more than you have staked for the dog faction"
+        // add the liquidity
+        // add the liquidity
+        router.addLiquidityETH{value: ethAmount}(
+            address(this),
+            tokenAmount,
+            0, // slippage is unavoidable
+            0, // slippage is unavoidable
+            owner(),
+            block.timestamp
         );
-        require(
-            faction != Faction.FROG || stakers[msg.sender].frogFactionAmount >= amount,
-            "Cannot unstake more than you have staked for the frog faction"
-        );
-        require(block.timestamp > stakers[msg.sender].lockingEndDate, "Cannot unstake until locking period is over");
-
-        // This is equivalent to taring it to 0
-        // This makes it so that the math to calculate the dps stays consistent
-        if (stakers[msg.sender].totalAmount > 0) {
-            distributeDividend(msg.sender);
-        }
-
-        if (stakers[msg.sender].totalAmount == amount) {
-            delete stakers[msg.sender];
-        } else {
-            stakers[msg.sender].totalAmount -= amount;
-        }
-
-        if (faction == Faction.DOG) {
-            totalDogFactionAmount -= amount;
-        } else {
-            totalFrogFactionAmount -= amount;
-        }
-        totalStakedAmount -= amount;
-
-        LPToken.transferFrom(address(this), msg.sender, amount);
-
-        emit StakeRemoved(msg.sender, amount);
     }
 
-    function removeEntireStake() external {
-        require(stakers[msg.sender].totalAmount > 0, "Cannot unstake if you haven't staked");
-        require(block.timestamp > stakers[msg.sender].lockingEndDate, "Cannot unstake until locking period is over");
-
-        // This is equivalent to taring it to 0
-        // This makes it so that the math to calculate the dps stays consistent
-        distributeDividend(msg.sender);
-
-        uint256 amount = stakers[msg.sender].totalAmount;
-        delete stakers[msg.sender];
-        totalStakedAmount -= amount;
-
-        LPToken.transferFrom(address(this), msg.sender, amount);
-
-        emit StakeRemoved(msg.sender, amount);
-    }
-
-    function claim() external {
-        distributeDividend(msg.sender);
-    }
-
-    function distributeDividend(address staker) internal {
-        require(stakers[staker].totalAmount > 0, "Cannot distribute to someone who hasn't staked");
-        uint256 amount = stakers[staker].totalAmount;
-        uint256 previousDividendsPerShare = stakers[staker].previousDividendsPerShare;
-
-        uint256 reward = (dividendsPerShare - previousDividendsPerShare) * amount;
-
-        stakers[staker].previousDividendsPerShare = dividendsPerShare;
-
-        // TODO: think about whether there is a case where reward can be 0 here
-        // I'm thinking not since the dividendsPerShare will always be greater than the previousDividendsPerShare, since dividendsPerShare only goes up
-        // this results in dividendsPerShare - previousDividendsPerShare > 0
-        // this means that the only time this can be 0 is when amount is 0
-        // so check to see if amount is 0 before even bothering to try this
-        super.transfer(staker, reward);
-    }
-
-    function calculateRewards(uint256 amount) private {
-        dividendsPerShare = dividendsPerShare + (amount / totalStakedAmount);
+    function setSwampAndYard(address _swampAndYard) external onlyOwner {
+        swampAndYard = ISwampAndYard(_swampAndYard);
     }
 
     function withdraw() external onlyOwner {

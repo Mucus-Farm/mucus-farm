@@ -8,18 +8,25 @@ import {Pausable} from "openzeppelin-contracts/contracts/security/Pausable.sol";
 contract SwampAndYard is Ownable, IERC721Receiver, Pausable {
     // struct to store a stake's token, owner, and earning values
     struct Stake {
-        uint16 tokenId;
-        uint80 value;
-        address owner;
+        uint256 frogsAndDogsStaked;
+        uint256 naturalGigasAndChadsStaked;
+        uint256 opposingGigasAndChadsStaked;
+        uint256 previousTimestampClaim;
+        uint256 previousMucusPerGigaOrChad;
     }
 
-    event TokenStaked(address owner, uint256 tokenId, uint256 value);
+    event TokenStaked(address owner, uint256[] tokenId, uint256 value);
     event SheepClaimed(uint256 tokenId, uint256 earned, bool unstaked);
     event WolfClaimed(uint256 tokenId, uint256 earned, bool unstaked);
 
-    // maps tokenId to stake
-    mapping(uint256 => Stake) public swamp;
-    mapping(uint256 => Stake) public yard;
+    // maps user to stake
+    mapping(address => Stake) public stakers;
+    // maps whether the frog or dog is staked or not
+    mapping(uint256 => bool) public naturalHabitat;
+    // tokenIds of all the gigas staked
+    mapping(uint256 => bool) public gigasStaked;
+    // tokenIds of all the chads staked
+    mapping(uint256 => bool) public chadsStaked;
 
     // any rewards distributed when no wolves are staked
     uint256 public unparentedRewards = 0;
@@ -29,18 +36,26 @@ contract SwampAndYard is Ownable, IERC721Receiver, Pausable {
     // sheep must have 2 days worth of $MUCUS to unstake or else it's too cold
     uint256 public constant MINIMUM_TO_EXIT = 2 days;
     // wolves take a 20% tax on all $MUCUS claimed
-    uint256 public constant mucus_CLAIM_TAX_PERCENTAGE = 20;
+    uint256 public constant MUCUS_CLAIM_TAX_PERCENTAGE = 20;
     // there will only ever be (roughly) 2.4 billion $MUCUS earned through staking
     uint256 public constant MAXIMUM_GLOBAL_mucus = 6262 * 1e8 * 1e18;
+    // magic number for when the bred frog or dog was stolen
+    uint256 public constant STOLEN_MAGIC_NUMBER = 9393;
+    // initial giga or chad tokenId
+    uint256 public constant GIGA_CHAD_START_TOKEN_ID = 6000;
 
     // amount of $MUCUS earned so far
-    uint256 public totalmucusEarned;
-    // number of Dogs staked in the Yard
-    uint256 public totalDogsStaked;
-    // number of Frogs staked in the Swamp
-    uint256 public totalFrogsStaked;
+    uint256 public totalMucusEarned;
+    // number of Frogs and Dogs staked
+    uint256 public totalFrogsAndDogsStaked;
+    // number of Gigas and Chads staked for farming
+    uint256 public totalNaturalGigasAndChadsStaked;
+    // number of Gigas and Chads staked for taxing and stealing
+    uint256 public totalOpposingGigasAndChadsStaked;
     // the last time $MUCUS was claimed
     uint256 public lastClaimTimestamp;
+    // the mucus per giga or chad staked
+    uint256 public mucusPerGigaOrChad;
 
     // emergency rescue to allow unstaking without any checks but without $MUCUS
     bool public rescueEnabled = false;
@@ -59,57 +74,106 @@ contract SwampAndYard is Ownable, IERC721Receiver, Pausable {
      * @param parent the address of the staker
      * @param tokenIds the IDs of the Sheep and Wolves to stake
      */
-    function addManyToNaturalHabitat(address parent, uint16[] calldata tokenIds) external {
+    function addManyToNaturalHabitat(address parent, uint256[] calldata tokenIds) external {
         require(
             parent == _msgSender() || _msgSender() == address(frogsAndDogs),
             "Cannot stake dogs or frogs that are not yours"
         );
+
+        // claim and reset their rewards to make it consistent
+        if (stakers[parent].frogsAndDogsStaked > 0 || stakers[parent].naturalGigasAndChadsStaked > 0) {
+            _distributeMucusRewards(parent);
+        }
+
+        uint256 frogsOrDogsAdded = 0;
+        uint256 naturalGigasOrChadsAdded = 0;
         for (uint256 i = 0; i < tokenIds.length; i++) {
             if (_msgSender() != address(frogsAndDogs)) {
                 // dont do this step if its a mint + stake
                 require(frogsAndDogs.ownerOf(tokenIds[i]) == _msgSender(), "Not the owner of the frog or dog");
                 frogsAndDogs.transferFrom(_msgSender(), address(this), tokenIds[i]);
-            } else if (tokenIds[i] == 0) {
+            } else if (tokenIds[i] == STOLEN_MAGIC_NUMBER) {
                 continue; // there may be gaps in the array for stolen tokens
             }
 
-            _addToNaturalHabitat(parent, tokenIds[i]);
+            if (tokenIds[i] < GIGA_CHAD_START_TOKEN_ID) {
+                frogsOrDogsAdded++;
+            } else {
+                naturalGigasOrChadsAdded++;
+            }
         }
+
+        if (frogsOrDogsAdded > 0) {
+            stakers[parent].frogsAndDogsStaked += frogsOrDogsAdded;
+        }
+        if (naturalGigasOrChadsAdded > 0) {
+            stakers[parent].naturalGigasAndChadsStaked += naturalGigasOrChadsAdded;
+        }
+
+        emit TokensStaked(parent, tokenIds, block.timestamp);
     }
 
     // TODO: need to create contract for gigasAndChads
     // staking a giga or chad gives them the ability to steal and tax
-    function addManyToWreakHavok(uint16[] calldata tokenIds) external {
+    function addManyToOpposingHabitat(uint256[] calldata tokenIds) external {
         for (uint256 i = 0; i < tokenIds.length; i++) {
-            require(_msgSender() == gigasAndChads.ownerOf(tokenIds[i]), "Not the owner of the giga or chad");
+            require(tokenIds[i] >= GIGA_CHAD_START_TOKEN_ID, "Can only stake a Giga or Chad in the opposing habitat");
+            require(_msgSender() == frogsAndDogs.ownerOf(tokenIds[i]), "Not the owner of the giga or chad");
+        }
+
+        // claim their tax based to reset and make it consistent
+        if (stakers[_msgSender()].opposingGigasAndChadsStaked > 0) {
+            _distributeMucusTax();
+        }
+
+        stakers[_msgSender()].oppposingGigasAndChadsStaked += tokenIds.length;
+        totalOpposingGigasAndChadsStaked += tokenIds.length;
+
+        emit TokensStaked(_msgSender(), tokenIds, block.timestamp);
+    }
+
+    function _distributeMucusTax() internal {
+        uint256 opposingGigasAndChadsStaked = stakers[_msgSender()].opposingGigasAndChadsStaked;
+        uint256 previousMucusPerGigaOrChad = stakers[_msgSender()].previousMucusPerGigaOrChad;
+        if (opposingGigasAndChadsStaked == 0) return;
+
+        uint256 tax = (mucusPerGigaOrChad - previousMucusPerGigaOrChad) * opposingGigasAndChadsStaked;
+
+        stakers[_msgSender()].previousMucusPerGigaOrChad = mucusPerGigaOrChad;
+
+        if (tax > 0) {
+            mucus.mint(_msgSender(), tax);
         }
     }
 
-    /**
-     * adds a Dog or Frog in the Yard or Swamp respectively
-     * @param parent the address of the staker
-     * @param tokenId the ID of the dog or frog to add to their habitat
-     */
-    function _addToNaturalHabitat(address parent, uint256 tokenId) internal whenNotPaused _updateEarnings {
-        if (tokenId % 2 == 0) {
-            yard[tokenId] = Stake({owner: parent, tokenId: uint16(tokenId), value: uint80(block.timestamp)});
-            totalDogsStaked += 1;
+    function _distributeMucusRewards(address parent) internal {
+        uint256 frogsAndDogsStaked = stakers[parent].frogsAndDogsStaked;
+        uint256 naturalGigasAndChadsStaked = stakers[parent].naturalGigasAndChadsStaked;
+        uint256 previousTimestampClaim = stakers[parent].previousTimestampClaim;
+        if (frogsAndDogsStaked == 0 && naturalGigasAndChadsStaked == 0) return;
+
+        uint256 frogsAndDogsReward = _calculateMucusRewards(frogsAndDogsStaked, previousTimestampClaim, false);
+        uint256 gigasAndChadsReward = _calculateMucusRewards(naturalGigasAndChadsStaked, previousTimestampClaim, true);
+        uint256 totalRewards = frogsAndDogsReward + gigasAndChadsReward;
+        uint256 tax = totalRewards * TAX_RATE / 100;
+
+        stakers[parent].previousTimestampClaim = block.timestamp;
+        stakers[parent].previousMucusPerGigaOrChad = mucusPerGigaOrChad;
+    }
+
+    function _payTax(uint256 rewardsClaimed) internal {
+        uint256 tax = rewardsClaimed * TAX_RATE / 100;
+    }
+
+    function _calculateMucusRewards(uint256 amountStaked, uint256 previousTimestampClaim, bool isGigaOrChad)
+        internal
+        view
+    {
+        if (isGigaOrChad) {
+            return 3 * amountStaked * (block.timestamp - previousTimestampClaim) * DAILY_MUCUS_RATE / 1 days;
         } else {
-            swamp[tokenId] = Stake({owner: parent, tokenId: uint16(tokenId), value: uint80(block.timestamp)});
-            totalFrogsStaked += 1;
+            return amountStaked * (block.timestamp - previousTimestampClaim) * DAILY_MUCUS_RATE / 1 days;
         }
-
-        emit TokenStaked(parent, tokenId, block.timestamp);
-    }
-
-    /**
-     * adds a single GigaFrog or ChadDog in the Yard or Swamp respectively
-     * @param parent the address of the staker
-     * @param tokenId the ID of the Wolf to add to the Pack
-     */
-    function _addToWreakHavok(address parent, uint256 tokenId) internal {
-        // implement chad and giga stuff here
-        emit TokenStaked(parent, tokenId, mucusPerAlpha);
     }
 
     /**
@@ -122,7 +186,7 @@ contract SwampAndYard is Ownable, IERC721Receiver, Pausable {
      * @param tokenIds the IDs of the tokens to claim earnings from
      * @param unstake whether or not to unstake ALL of the tokens listed in tokenIds
      */
-    function claimManyFromBarnAndPack(uint16[] calldata tokenIds, bool unstake)
+    function claimManyFromBarnAndPack(uint256[] calldata tokenIds, bool unstake)
         external
         whenNotPaused
         _updateEarnings
@@ -147,7 +211,7 @@ contract SwampAndYard is Ownable, IERC721Receiver, Pausable {
         Stake memory stake = tokenId % 2 == 0 ? yard[tokenId] : swamp[tokenId];
         require(stake.owner == _msgSender(), "SWIPER, NO SWIPING");
         require(!(unstake && block.timestamp - stake.value < MINIMUM_TO_EXIT), "GONNA BE COLD WITHOUT TWO DAY'S mucus");
-        if (totalmucusEarned < MAXIMUM_GLOBAL_mucus) {
+        if (totalMucusEarned < MAXIMUM_GLOBAL_mucus) {
             owed = (block.timestamp - stake.value) * DAILY_MUCUS_RATE / 1 days;
         } else if (stake.value > lastClaimTimestamp) {
             owed = 0; // $MUCUS production stopped already
@@ -159,9 +223,9 @@ contract SwampAndYard is Ownable, IERC721Receiver, Pausable {
             delete barn[tokenId];
             totalDogsStaked -= 1;
         } else {
-            _payWolfTax(owed * mucus_CLAIM_TAX_PERCENTAGE / 100); // percentage tax to staked wolves
-            owed = owed * (100 - mucus_CLAIM_TAX_PERCENTAGE) / 100; // remainder goes to Sheep owner
-            barn[tokenId] = Stake({owner: _msgSender(), tokenId: uint16(tokenId), value: uint80(block.timestamp)}); // reset stake
+            _payWolfTax(owed * MUCUS_CLAIM_TAX_PERCENTAGE / 100); // percentage tax to staked wolves
+            owed = owed * (100 - MUCUS_CLAIM_TAX_PERCENTAGE) / 100; // remainder goes to Sheep owner
+            barn[tokenId] = Stake({owner: _msgSender(), tokenId: uint256(tokenId), value: block.timestamp}); // reset stake
         }
         emit SheepClaimed(tokenId, owed, unstake);
     }
@@ -175,7 +239,9 @@ contract SwampAndYard is Ownable, IERC721Receiver, Pausable {
      */
     function _claimGigaOrFrogFromOpposingHabitat(uint256 tokenId, bool unstake) internal returns (uint256 owed) {
         require(gigasAndChads.ownerOf(tokenId) == address(this), "Cannot claim giga or chad that is not staked");
-        require(gigasAndChadsDominating[_msgSender()].owner == _msgSender(), "You are not the owner of this giga or chad");
+        require(
+            gigasAndChadsDominating[_msgSender()].owner == _msgSender(), "You are not the owner of this giga or chad"
+        );
 
         uint256 previousMucusPerAlpha = pack[tokenId].value;
         Stake memory stake = pack[tokenId];
@@ -186,7 +252,7 @@ contract SwampAndYard is Ownable, IERC721Receiver, Pausable {
             delete pack[tokenId]; // Delete old mapping
         } else {
             pack[alpha][packIndices[tokenId]] =
-                Stake({owner: _msgSender(), tokenId: uint16(tokenId), value: uint80(mucusPerAlpha)}); // reset stake
+                Stake({owner: _msgSender(), tokenId: uint256(tokenId), value: uint256(mucusPerAlpha)}); // reset stake
         }
         emit WolfClaimed(tokenId, owed, unstake);
     }
@@ -249,8 +315,8 @@ contract SwampAndYard is Ownable, IERC721Receiver, Pausable {
      * tracks $MUCUS earnings to ensure it stops once 2.4 billion is eclipsed
      */
     modifier _updateEarnings() {
-        if (totalmucusEarned < MAXIMUM_GLOBAL_mucus) {
-            totalmucusEarned += (block.timestamp - lastClaimTimestamp) * totalDogsStaked * DAILY_MUCUS_RATE / 1 days;
+        if (totalMucusEarned < MAXIMUM_GLOBAL_mucus) {
+            totalMucusEarned += (block.timestamp - lastClaimTimestamp) * totalDogsStaked * DAILY_MUCUS_RATE / 1 days;
             lastClaimTimestamp = block.timestamp;
         }
         _;

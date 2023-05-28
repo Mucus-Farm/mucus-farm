@@ -10,9 +10,18 @@ import {VRFConsumerBaseV2} from "chainlink/contracts/src/v0.8/vrf/VRFConsumerBas
 contract FrogsAndDogs is ERC721, VRFConsumerBaseV2, Ownable, Pausable {
     uint256 public constant ETH_MINT_PRICE = 0.03131 ether;
     uint256 public constant MUCUS_MINT_PRICE = 6262 ether;
-    uint256 public immutable MAX_SUPPLY = 9393;
-    uint256 public tokensPaidInEth = 3131; // 1/3 of the supply
-    uint16 public minted;
+    uint256 public constant SUMMON_PRICE = 9393 ether;
+
+    uint256 public constant FROGS_AND_DOGS_SUPPLY = 6000;
+    uint256 public constant GIGAS_MAX_SUPPLY = 7001;
+    uint256 public constant CHADS_MAX_SUPPLY = 7000;
+    uint16 public constant STOLEN_MAGIC_NUMBER = 9393;
+
+    uint256 public minted;
+    uint256 public gigasMinted = 6001;
+    uint256 public chadsMinted = 6000;
+
+    uint256 public tokensPaidInEth = 2000; // 1/3 of the supply
     string public baseURI; // setup endpoint that grabs the images and denies access to images for tokenIds that aren't minted yet
 
     // see https://docs.chain.link/docs/vrf/v2/subscription/supported-networks/#configurations
@@ -29,20 +38,28 @@ contract FrogsAndDogs is ERC721, VRFConsumerBaseV2, Ownable, Pausable {
     // The default is 3, but you can set this higher.
     uint16 requestConfirmations = 3;
 
-    struct BreedingRequest {
+    enum Faction {
+        FROG,
+        DOG
+    }
+
+    struct Request {
         uint256 amount;
         bool fulfilled;
         bool stake;
+        bool transform;
+        Faction transformationType;
+        Faction land;
         address parent;
     }
 
-    mapping(uint256 => BreedingRequest) public breedingRequests;
+    mapping(uint256 => Request) public requests;
 
     VRFCoordinatorV2Interface public immutable vrfCoordinator;
     uint256 private subscriptionId;
 
-    event BreedingRequestSent(uint256 indexed breedingRequestId, uint256 amount);
-    event BreedingRequestFulfilled(uint256 indexed breedingRequestId, uint256 amount);
+    event RequestSent(uint256 indexed RequestId, uint256 amount);
+    event RequestFulfilled(uint256 indexed RequestId, uint256 amount);
 
     constructor(uint256 _subscriptionId, string memory _baseURI) ERC721("Frogs and Dogs", "FND") {
         vrfCoordinator = VRFCoordinatorV2Interface(0x8103B0A8A00be2DDC778e6e7eaa21791Cd364625);
@@ -57,9 +74,9 @@ contract FrogsAndDogs is ERC721, VRFConsumerBaseV2, Ownable, Pausable {
         uint16[] memory tokenIds = stake ? new uint16[](amount) : new uint16[](0);
 
         for (uint256 i = 0; i < amount; i++) {
-            minted++;
             _safeMint(_msgSender(), minted);
             if (stake) tokenIds[i] = minted;
+            minted++;
         }
 
         if (stake) swampAndYard.addManyToNaturalHabitat(_msgSender(), tokenIds);
@@ -67,44 +84,110 @@ contract FrogsAndDogs is ERC721, VRFConsumerBaseV2, Ownable, Pausable {
 
     function breedAndAdpot(uint256 amount, bool stake) external payable {
         require(minted > tokensPaidInEth, "Breeding not available yet");
-        require(minted + amount <= MAX_SUPPLY, "All Dogs and Frogs have been minted");
+        require(minted + amount <= FROGS_AND_DOGS_SUPPLY, "All Dogs and Frogs have been minted");
         require(MUCUS_MINT_PRICE * amount <= mucus.balanceOf(msg.sender), "Insufficient $MUCUS balance");
 
         // Will revert if subscription is not set and funded.
-        uint256 breedingRequestId =
+        uint256 RequestId =
             vrfCoordinator.requestRandomWords(keyHash, subscriptionId, requestConfirmations, callbackGasLimit, 1);
-        breedingRequests[breedingRequestId] =
-            BreedingRequest({amount: amount, fulfilled: false, stake: stake, parent: msg.sender});
+        requests[RequestId] = Request({
+            amount: amount,
+            fulfilled: false,
+            transform: false,
+            transformationType: 0, // This doesn't matter here
+            land: 0, // This doesn't matter here
+            stake: stake,
+            parent: msg.sender
+        });
 
-        emit BreedingRequestSent(breedingRequestId, amount);
+        mucus.burn(_msgSender(), amount * MUCUS_MINT_PRICE);
+
+        emit RequestSent(RequestId, amount);
+    }
+
+    function transform(uint256[] tokenIds, Faction transformationType, Faction land, bool stake) external payable {
+        require(tokenIds.length == 3 && isCorrectTypes(tokenIds, transformationType), "Must use 3 of the same types");
+        require(transformationType != Faction.FROG || gigasMinted + 2 < GIGAS_MAX_SUPPLY, "All Gigas have been minted");
+        require(transformationType != Faction.DOG || chadsMinted + 2 < CHADS_MAX_SUPPLY, "All Chads have been minted");
+
+        // Will revert if subscription is not set and funded.
+        uint256 RequestId =
+            vrfCoordinator.requestRandomWords(keyHash, subscriptionId, requestConfirmations, callbackGasLimit, 1);
+        requests[RequestId] = Request({
+            amount: 1,
+            fulfilled: false,
+            transform: true,
+            transformationType: transformationType,
+            land: land,
+            stake: stake,
+            parent: msg.sender
+        });
+
+        for (uint256 i; i < tokenIds.length; i++) {
+            FrogsAndDogs._burn(tokenIds[i]);
+        }
+        mucus.burn(_msgSender(), SUMMON_PRICE);
+
+        emit RequestSent(RequestId, 1);
     }
 
     function fulfillRandomWords(uint256 _requestId, uint256[] memory _randomWords) internal override {
-        require(!breedingRequests[_requestId].fulfilled, "request already fulfilled");
+        require(!requests[_requestId].fulfilled, "request already fulfilled");
 
-        bool stake = breedingRequests[_requestId].stake;
-        uint256 amount = breedingRequests[_requestId].amount;
-        address parent = breedingRequests[_requestId].parent;
         uint256 rng = _randomWords[0];
+        requests[_requestId].fulfilled = true;
 
+        if (!requests[_requestId].transform) {
+            mintOrStealFrogOrDog(
+                requests[_requestId].stake, requests[_requestId].amount, requests[_requestId].parent, rng
+            );
+        } else {
+            mintOrBustGigaOrChad(
+                requests[_requestId].transformationType,
+                requests[_requestId].land,
+                requests[_requestId].parent,
+                requests[_requestId].stake,
+                rng
+            );
+        }
+
+        emit RequestFulfilled(_requestId, requests[_requestId].amount);
+    }
+
+    function mintOrStealFrogOrDog(bool stake, uint256 amount, address parent, uint256 rng) internal {
         uint16[] memory tokenIds = stake ? new uint16[](amount) : new uint16[](0);
         address recipient = selectRecipient(rng, parent);
-
-        breedingRequests[_requestId].fulfilled = true;
 
         for (uint256 i = 0; i < amount; i++) {
             if (!stake || recipient != parent) {
                 _safeMint(recipient, minted);
+                tokenIds[i] = STOLEN_MAGIC_NUMBER;
             } else {
                 _safeMint(address(swampAndYard), minted);
                 tokenIds[i] = minted;
             }
+            minted++;
         }
 
-        mucus.burn(parent, amount * MUCUS_MINT_PRICE);
         if (stake) swampAndYard.addManyToNaturalHabitat(parent, tokenIds);
+    }
 
-        emit BreedingRequestFulfilled(_requestId, amount);
+    function mintOrBustGigaOrChad(Faction transformationType, Faction land, address parent, bool stake, uint256 rng)
+        internal
+    {
+        require(rng % 5 != 0, "Bust, summoning failed");
+
+        uint256 tokenId = transformationType == Faction.FROG ? gigasMinted : chadsMinted;
+        if (transformationType == Faction.FROG) {
+            _safeMint(stake ? address(swampAndYard) : parent, gigasMinted);
+            gigasMinted += 2;
+        } else {
+            _safeMint(stake ? address(swampAndYard) : parent, chadsMinted);
+            chadsMinted += 2;
+        }
+        minted++;
+
+        if (stake) swampAndYard.stakeGigaOrChad(tokenId, land);
     }
 
     function transferFrom(address from, address to, uint256 tokenId) public virtual override {
@@ -135,6 +218,18 @@ contract FrogsAndDogs is ERC721, VRFConsumerBaseV2, Ownable, Pausable {
 
         if (thief == address(0x0)) return parent;
         return thief;
+    }
+
+    function isCorrectTypes(uint256[] tokenIds, Faction transformationType)
+        internal
+        view
+        returns (uint256 cumulative)
+    {
+        for (uint256 i; i < tokenIds.length; i++) {
+            if (tokenIds[i] % 2 != transformationType) return false;
+        }
+
+        return true;
     }
 
     function setSwampAndYard(address _swampAndYard) external onlyOwner {
