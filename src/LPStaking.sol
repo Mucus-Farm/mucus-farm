@@ -39,8 +39,8 @@ contract DividendsPairStaking {
     uint256 public soupCycleDuration = 3 days;
     IERC20 public LPToken;
 
-    address _token;
-    address _owner;
+    address private _token;
+    address private _owner;
 
     event StakeAdded(address indexed staker, uint256 amount);
     event StakeRemoved(address indexed staker, uint256 amount);

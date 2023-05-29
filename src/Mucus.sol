@@ -29,20 +29,21 @@ contract Mucus is ERC20 {
     address teamWallet;
 
     IDividendsPairStaking public dividendsPairStaking;
-    ISwampAndYArd public swampAndYard;
     IUniswapV2Router02 public router;
     address public pair;
+    address public mucusFarm;
 
     event StakeAdded(address indexed staker, uint256 amount);
     event StakeRemoved(address indexed staker, uint256 amount);
     event DividendsPerShareUpdated(uint256 dividendsPerShare);
 
-    constructor(address _LPStaking) ERC20("Mucus", "MUCUS") {
+    constructor(address _LPStaking, address _mucusFarm) ERC20("Mucus", "MUCUS") {
         router = IUniswapV2Router02(0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D);
         pair = IUniswapV2Factory(router.factory()).createPair(address(this), router.WETH());
         dividendsPairStaking = new DividendsPairStaking(msg.sender, pair);
 
         _owner = msg.sender;
+        mucusFarm = _mucusFarm;
         _mint(msg.sender, tokenSupply);
     }
 
@@ -51,7 +52,12 @@ contract Mucus is ERC20 {
         _;
     }
 
-    function mint(address to, uint256 amount) public {
+    modifier onlyMucusFarm() {
+        require(msg.sender == address(swampAndYard));
+        _;
+    }
+
+    function mint(address to, uint256 amount) external onlyMucusFarm {
         _mint(to, amount);
     }
 
@@ -151,8 +157,8 @@ contract Mucus is ERC20 {
         );
     }
 
-    function setSwampAndYard(address _swampAndYard) external onlyOwner {
-        swampAndYard = ISwampAndYard(_swampAndYard);
+    function setMucusFarm(address _mucusFarm) external onlyOwner {
+        mucusFarm = _mucusFarm;
     }
 
     function withdraw() external onlyOwner {
