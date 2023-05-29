@@ -3,28 +3,10 @@ pragma solidity ^0.8.13;
 
 import {IERC20} from "openzeppelin-contracts/contracts/token/ERC20/IERC20.sol";
 import {SafeMath} from "openzeppelin-contracts/contracts/utils/math/SafeMath.sol";
+import {IDividendsPairStaking} from "./interfaces/IDividendsPairStaking.sol";
 
-contract DividendsPairStaking {
+contract DividendsPairStaking is IDividendsPairStaking {
     using SafeMath for uint256;
-
-    enum Faction {
-        DOG,
-        FROG
-    }
-
-    struct Staker {
-        uint256 totalAmount;
-        uint256 dogFactionAmount;
-        uint256 frogFactionAmount;
-        uint256 previousDividendsPerShare;
-        uint256 lockingEndDate;
-    }
-
-    struct SoupCycle {
-        uint256 timestamp;
-        Faction soupedUp;
-        uint256 totalFrogWins;
-    }
 
     uint256 public totalDogFactionAmount;
     uint256 public totalFrogFactionAmount;
@@ -42,10 +24,6 @@ contract DividendsPairStaking {
     address private _token;
     address private _owner;
 
-    event StakeAdded(address indexed staker, uint256 amount);
-    event StakeRemoved(address indexed staker, uint256 amount);
-    event DividendsPerShareUpdated(uint256 dividendsPerShare);
-
     constructor(address owner, address pair) {
         LPToken = IERC20(pair);
         _token = msg.sender;
@@ -62,6 +40,10 @@ contract DividendsPairStaking {
     modifier onlyOwner() {
         require(msg.sender == _owner);
         _;
+    }
+
+    function nextSoupCycle() external view returns (uint256) {
+        return soupCycles[currentSoupIndex].timestamp + soupCycleDuration;
     }
 
     function addStake(uint256 amount, Faction faction) external {
@@ -164,7 +146,7 @@ contract DividendsPairStaking {
         // this results in dividendsPerShare - previousDividendsPerShare > 0
         // this means that the only time this can be 0 is when amount is 0
         // so check to see if amount is 0 before even bothering to try this
-        LPToken.transfer(staker, reward);
+        IERC20(_token).transfer(staker, reward);
     }
 
     function deposit(uint256 amount) external onlyTokenOrOwner {
@@ -172,6 +154,8 @@ contract DividendsPairStaking {
             dividendsPerShare =
                 dividendsPerShare.add(dividendsPerShareAccuracyFactor.mul(amount).div(totalStakedAmount));
         }
+
+        emit DividendsPerShareUpdated(dividendsPerShare);
     }
 
     function cycleSoup() external onlyTokenOrOwner {

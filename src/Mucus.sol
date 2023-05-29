@@ -6,6 +6,7 @@ import {IERC20} from "openzeppelin-contracts/contracts/token/ERC20/IERC20.sol";
 import {SafeMath} from "openzeppelin-contracts/contracts/utils/math/SafeMath.sol";
 import {IUniswapV2Factory} from "v2-core/interfaces/IUniswapV2Factory.sol";
 import {IUniswapV2Router02} from "v2-periphery/interfaces/IUniswapV2Router02.sol";
+import {DividendsPairStaking} from "./DividendsPairStaking.sol";
 
 contract Mucus is ERC20 {
     using SafeMath for uint256;
@@ -28,16 +29,12 @@ contract Mucus is ERC20 {
     mapping(address => bool) private isFeeExempt;
     address teamWallet;
 
-    IDividendsPairStaking public dividendsPairStaking;
+    DividendsPairStaking private dividendsPairStaking;
     IUniswapV2Router02 public router;
     address public pair;
     address public mucusFarm;
 
-    event StakeAdded(address indexed staker, uint256 amount);
-    event StakeRemoved(address indexed staker, uint256 amount);
-    event DividendsPerShareUpdated(uint256 dividendsPerShare);
-
-    constructor(address _LPStaking, address _mucusFarm) ERC20("Mucus", "MUCUS") {
+    constructor(address _mucusFarm) ERC20("Mucus", "MUCUS") {
         router = IUniswapV2Router02(0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D);
         pair = IUniswapV2Factory(router.factory()).createPair(address(this), router.WETH());
         dividendsPairStaking = new DividendsPairStaking(msg.sender, pair);
@@ -53,12 +50,16 @@ contract Mucus is ERC20 {
     }
 
     modifier onlyMucusFarm() {
-        require(msg.sender == address(swampAndYard));
+        require(msg.sender == address(mucusFarm));
         _;
     }
 
     function mint(address to, uint256 amount) external onlyMucusFarm {
         _mint(to, amount);
+    }
+
+    function burn(address account, uint256 amount) external onlyMucusFarm {
+        _burn(account, amount);
     }
 
     // Time based rewards?
@@ -84,6 +85,7 @@ contract Mucus is ERC20 {
             dividendsPairStaking.cycleSoup();
         }
 
+        uint256 fees = 0;
         // don't run this if it's currently swapping, if either the sender or the reciever is fee exempt, or if it's not a buy or sell
         if (!swapping && !(isFeeExempt[from] || isFeeExempt[to]) && (pair == from || pair == to)) {
             fees = amount.mul(totalFee).div(denominator);
@@ -112,15 +114,13 @@ contract Mucus is ERC20 {
 
         addLiquidity(tokensForliquidity, ethForLiquidity);
 
-        bool stakersTransferSuccess = super.transfer(address(diviends), tokensForStakers);
+        bool stakersTransferSuccess = super.transfer(address(dividendsPairStaking), tokensForStakers);
         if (stakersTransferSuccess) {
             dividendsPairStaking.deposit(tokensForStakers);
         }
 
         (bool teamTransferSuccess,) = address(teamWallet).call{value: ethForTeam}("");
         require(teamTransferSuccess, "Failed to send ETH to team wallet");
-
-        emit DividendsPerShareUpdated(dividendsPerShare);
     }
 
     function swapTokensForEth(uint256 tokenAmount) private {
@@ -152,7 +152,7 @@ contract Mucus is ERC20 {
             tokenAmount,
             0, // slippage is unavoidable
             0, // slippage is unavoidable
-            owner(),
+            _owner,
             block.timestamp
         );
     }
