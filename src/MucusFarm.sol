@@ -3,15 +3,12 @@ pragma solidity ^0.8.13;
 
 import {IERC721} from "openzeppelin-contracts/contracts/token/ERC721/IERC721.sol";
 import {IERC721Receiver} from "openzeppelin-contracts/contracts/token/ERC721/IERC721Receiver.sol";
-import {SafeMath} from "openzeppelin-contracts/contracts/utils/math/SafeMath.sol";
 import {Pausable} from "openzeppelin-contracts/contracts/security/Pausable.sol";
 import {IMucusFarm} from "./interfaces/IMucusFarm.sol";
 import {IMucus} from "./interfaces/IMucus.sol";
 import {IDividendsPairStaking} from "./interfaces/IDividendsPairStaking.sol";
 
 contract MucusFarm is IMucusFarm, IERC721Receiver, Pausable {
-    using SafeMath for uint256;
-
     uint256 public constant INITIAL_GIGA_CHAD_TOKEN_ID = 6000;
     uint256 public constant WINNING_POOL_TAX_RATE = 5;
     uint256 public constant LOSING_POOL_TAX_RATE = 20;
@@ -64,27 +61,25 @@ contract MucusFarm is IMucusFarm, IERC721Receiver, Pausable {
             }
 
             if (_isFrog(tokenIds[i])) {
-                farm[tokenIds[i]] = Stake({
-                    owner: parent,
-                    previousTaxPer: taxPerGiga,
-                    previousClaimTimestamp: block.timestamp,
-                    previousSoupIndex: dividendsPairStaking.currentSoupIndex(),
-                    gigaOrChadIndex: gigasStaked.length
-                });
-                if (tokenIds[i] >= INITIAL_GIGA_CHAD_TOKEN_ID) gigasStaked.push(tokenIds[i]);
+                addToMucusFarm(parent, tokenIds[i], taxPerGiga, gigasStaked);
             } else {
-                farm[tokenIds[i]] = Stake({
-                    owner: parent,
-                    previousTaxPer: taxPerChad,
-                    previousClaimTimestamp: block.timestamp,
-                    previousSoupIndex: dividendsPairStaking.currentSoupIndex(),
-                    gigaOrChadIndex: gigasStaked.length
-                });
-                if (tokenIds[i] >= INITIAL_GIGA_CHAD_TOKEN_ID) chadsStaked.push(tokenIds[i]);
+                addToMucusFarm(parent, tokenIds[i], taxPerChad, chadsStaked);
             }
 
             emit TokenStaked(parent, tokenIds[i]);
         }
+    }
+
+    function addToMucusFarm(address parent, uint256 tokenId, uint256 taxPer, uint256[] storage staked) internal {
+        farm[tokenId] = Stake({
+            owner: parent,
+            lockingEndtime: block.timestamp + 3 days,
+            previousTaxPer: taxPer,
+            previousClaimTimestamp: block.timestamp,
+            previousSoupIndex: dividendsPairStaking.currentSoupIndex(),
+            gigaOrChadIndex: staked.length
+        });
+        if (tokenId >= INITIAL_GIGA_CHAD_TOKEN_ID) staked.push(tokenId);
     }
 
     // Test case 1: claim sheep and not unstake
@@ -110,10 +105,18 @@ contract MucusFarm is IMucusFarm, IERC721Receiver, Pausable {
     // Be mindful of the taxPerGiga and taxPerChad rates. Make sure to add on to it after the sheep mucus claim, else wise
     // the claimer is essentially claiming from there own stack, which may have some weird consequences
     function claimMany(uint256[] calldata tokenIds, bool unstake) external {
+        // farming accounting
         uint256 totalMucusEarned;
         uint256 totalBurnableTax;
         uint256 totalClaimableGigaTax;
         uint256 totalClaimableChadTax;
+
+        // test to see if it does save on gas
+        // // cache in memory to save on gas
+        // uint256[] memory _gigasStaked = gigasStaked;
+        // uint256[] memory _chadsStaked = chadsStaked;
+        // uint256 _taxPerGiga = taxPerGiga;
+        // uint256 _taxPerChad = taxPerChad;
 
         for (uint256 i; i < tokenIds.length; i++) {
             Stake memory stake = farm[tokenIds[i]];
@@ -121,7 +124,7 @@ contract MucusFarm is IMucusFarm, IERC721Receiver, Pausable {
 
             // calculate earnings
             uint256 mucusRate = tokenIds[i] >= INITIAL_GIGA_CHAD_TOKEN_ID ? DAILY_MUCUS_RATE * 3 : DAILY_MUCUS_RATE;
-            totalMucusEarned = (block.timestamp - stake.previousClaimTimestamp).mul(mucusRate).div(1 days);
+            totalMucusEarned = (block.timestamp - stake.previousClaimTimestamp) * mucusRate / 1 days;
             (uint256 burnableTax, uint256 claimableTax) = _getTax(tokenIds[i]);
             if (_isFrog(tokenIds[i])) totalClaimableChadTax += claimableTax;
             else totalClaimableGigaTax += claimableTax;
@@ -130,7 +133,6 @@ contract MucusFarm is IMucusFarm, IERC721Receiver, Pausable {
             if (tokenIds[i] >= INITIAL_GIGA_CHAD_TOKEN_ID) {
                 totalMucusEarned += (_isFrog(tokenIds[i]) ? taxPerGiga : taxPerChad) - stake.previousTaxPer;
             }
-            emit TokenFarmed(tokenIds[i], totalMucusEarned);
 
             // update stake or unstake
             if (!unstake) {
@@ -139,22 +141,14 @@ contract MucusFarm is IMucusFarm, IERC721Receiver, Pausable {
                 stake.previousSoupIndex = dividendsPairStaking.currentSoupIndex();
                 farm[tokenIds[i]] = stake;
             } else {
-                if (tokenIds[i] >= INITIAL_GIGA_CHAD_TOKEN_ID) {
-                    uint256[] storage stakedTokenIds = _isFrog(tokenIds[i]) ? gigasStaked : chadsStaked;
-                    uint256 lastStakedTokenId = stakedTokenIds[stakedTokenIds.length - 1];
-                    Stake storage lastStaked = farm[lastStakedTokenId];
-
-                    stakedTokenIds[stake.gigaOrChadIndex] = lastStakedTokenId; // Shuffle last giga or chad to current position
-                    lastStaked.gigaOrChadIndex = stake.gigaOrChadIndex;
-                    stakedTokenIds.pop(); // Remove duplicate
-                }
-                delete farm[tokenIds[i]]; // Delete old mapping
-                frogsAndDogs.transferFrom(address(this), _msgSender(), tokenIds[i]); // transfer the frog or dog back to owner
-
-                emit TokenUnstaked(_msgSender(), tokenIds[i]);
+                require(block.timestamp > stake.lockingEndtime, "Cannot unstake frogs or dogs that are still locked");
+                removeFromMucusFarm(tokenIds[i], stake, _isFrog(tokenIds[i]) ? gigasStaked : chadsStaked);
             }
+
+            emit TokenFarmed(tokenIds[i], totalMucusEarned);
         }
 
+        // update giga and chads tax per
         if (chadsStaked.length == 0) {
             unclaimedChadTax += totalClaimableChadTax;
         } else {
@@ -168,21 +162,35 @@ contract MucusFarm is IMucusFarm, IERC721Receiver, Pausable {
             unclaimedGigaTax = 0;
         }
 
-        if (totalMucusEarned > 0 && totalMucusMinted < MAX_MUCUS_MINTED) {
-            uint256 mucusToMint = totalMucusMinted + totalMucusEarned > MAX_MUCUS_MINTED
-                ? MAX_MUCUS_MINTED - totalMucusMinted
-                : totalMucusEarned;
-            totalMucusMinted += mucusToMint;
-            mucus.mint(_msgSender(), mucusToMint);
-        }
-        if (totalBurnableTax > 0 && totalMucusMinted < MAX_MUCUS_MINTED) {
-            uint256 mucusToBurn = totalMucusMinted + totalBurnableTax > MAX_MUCUS_MINTED
-                ? MAX_MUCUS_MINTED - totalMucusMinted
-                : totalBurnableTax;
-            totalMucusMinted += mucusToBurn;
-            mucus.mint(_DEAD, mucusToBurn);
+        // mint mucus
+        mintMucus(_msgSender(), totalMucusEarned);
+        mintMucus(_DEAD, totalBurnableTax);
+    }
 
-            emit MucusBurned(mucusToBurn);
+    function removeFromMucusFarm(uint256 tokenId, Stake memory stake, uint256[] storage stakedTokenIds) internal {
+        require(stake.owner == _msgSender(), "Cannot unstake tokens that you don't own");
+        if (tokenId >= INITIAL_GIGA_CHAD_TOKEN_ID) {
+            uint256 lastStakedTokenId = stakedTokenIds[stakedTokenIds.length - 1];
+            Stake storage lastStaked = farm[lastStakedTokenId];
+
+            stakedTokenIds[stake.gigaOrChadIndex] = lastStakedTokenId; // Shuffle last giga or chad to current position
+            lastStaked.gigaOrChadIndex = stake.gigaOrChadIndex;
+            stakedTokenIds.pop(); // Remove duplicate
+        }
+        delete farm[tokenId]; // Delete old mapping
+        frogsAndDogs.transferFrom(address(this), _msgSender(), tokenId); // transfer the frog or dog back to owner
+
+        emit TokenUnstaked(_msgSender(), tokenId);
+    }
+
+    function mintMucus(address to, uint256 amount) internal {
+        if (amount > 0 && totalMucusMinted < MAX_MUCUS_MINTED) {
+            uint256 mucusToMint =
+                totalMucusMinted + amount > MAX_MUCUS_MINTED ? MAX_MUCUS_MINTED - totalMucusMinted : amount;
+            totalMucusMinted += mucusToMint;
+            mucus.mint(to, mucusToMint);
+
+            emit MucusEarned(to, mucusToMint);
         }
     }
 
@@ -222,10 +230,10 @@ contract MucusFarm is IMucusFarm, IERC721Receiver, Pausable {
             if (previousSoupCycle.timestamp + soupCycleDuration > stake.previousClaimTimestamp) {
                 if (toUInt256(_isFrog(tokenId)) == uint256(previousSoupCycle.soupedUp)) {
                     burnableTax += ((previousSoupCycle.timestamp + soupCycleDuration) - stake.previousClaimTimestamp)
-                        .mul(mucusRate).mul(5).div(100).div(1 days);
+                        * mucusRate * 5 / 100 / 1 days;
                 } else {
                     claimableTax += ((previousSoupCycle.timestamp + soupCycleDuration) - stake.previousClaimTimestamp)
-                        .mul(mucusRate).mul(20).div(100).div(1 days);
+                        * mucusRate * 20 / 100 / 1 days;
                 }
             }
 
@@ -236,11 +244,11 @@ contract MucusFarm is IMucusFarm, IERC721Receiver, Pausable {
                 currentSoupCycle.totalFrogWins - previousSoupCycle.totalFrogWins - uint256(previousSoupCycle.soupedUp); // If the previous leftover cycle was a frog cycle, don't count it again
             uint256 totalDogWinsPassed = soupCyclesPassed - totalFrogWinsPassed;
             if (_isFrog(tokenId)) {
-                claimableTax += totalDogWinsPassed.mul(mucusRate).mul(soupCycleDuration).mul(20).div(100);
-                burnableTax += totalFrogWinsPassed.mul(mucusRate).mul(soupCycleDuration).mul(5).div(100);
+                claimableTax += totalDogWinsPassed * soupCycleDuration * mucusRate * 20 / 100 / 1 days;
+                burnableTax += totalFrogWinsPassed * soupCycleDuration * mucusRate * 5 / 100 / 1 days;
             } else {
-                claimableTax += totalFrogWinsPassed.mul(mucusRate).mul(soupCycleDuration).mul(20).div(100);
-                burnableTax += totalDogWinsPassed.mul(mucusRate).mul(soupCycleDuration).mul(5).div(100);
+                claimableTax += totalFrogWinsPassed * soupCycleDuration * mucusRate * 20 / 100 / 1 days;
+                burnableTax += totalDogWinsPassed * soupCycleDuration * mucusRate * 5 / 100 / 1 days;
             }
         }
 
@@ -250,9 +258,9 @@ contract MucusFarm is IMucusFarm, IERC721Receiver, Pausable {
             ? currentSoupCycle.timestamp
             : stake.previousClaimTimestamp;
         if (toUInt256(_isFrog(tokenId)) == uint256(currentSoupCycle.soupedUp)) {
-            burnableTax += (block.timestamp - previousTimestamp).mul(mucusRate).mul(5).div(100).div(1 days);
+            burnableTax += (block.timestamp - previousTimestamp) * mucusRate * 5 / 100 / 1 days;
         } else {
-            claimableTax += (block.timestamp - previousTimestamp).mul(mucusRate).mul(20).div(100).div(1 days);
+            claimableTax += (block.timestamp - previousTimestamp) * mucusRate * 20 / 100 / 1 days;
         }
 
         return (burnableTax, claimableTax);
@@ -272,25 +280,10 @@ contract MucusFarm is IMucusFarm, IERC721Receiver, Pausable {
     function rescue(uint256[] calldata tokenIds) external {
         require(rescueEnabled, "Rescue mode not enabled");
         uint256 tokenId;
-        Stake memory stake;
-        uint256[] storage staked;
-        uint256 lastStakeTokenId;
-        Stake memory lastStake;
 
         for (uint256 i = 0; i < tokenIds.length; i++) {
             tokenId = tokenIds[i];
-            stake = farm[tokenId];
-            require(stake.owner == _msgSender(), "Cannot unstake tokens that you don't own");
-            if (tokenId >= INITIAL_GIGA_CHAD_TOKEN_ID) {
-                staked = _isFrog(tokenId) ? gigasStaked : chadsStaked;
-                lastStakeTokenId = staked[staked.length - 1];
-                lastStake = farm[lastStakeTokenId];
-                staked[stake.gigaOrChadIndex] = lastStakeTokenId; // Shuffle last giga or chad to current position
-                farm[lastStakeTokenId].gigaOrChadIndex = stake.gigaOrChadIndex;
-                staked.pop(); // Remove duplicate
-            }
-            frogsAndDogs.safeTransferFrom(address(this), _msgSender(), tokenId, ""); // send back token
-            delete farm[tokenId]; // Delete old mapping
+            removeFromMucusFarm(tokenId, farm[tokenId], _isFrog(tokenId) ? gigasStaked : chadsStaked);
         }
     }
 

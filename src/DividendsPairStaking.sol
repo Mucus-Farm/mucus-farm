@@ -1,39 +1,41 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity ^0.8.13;
 
+import {IUniswapV2Factory} from "v2-core/interfaces/IUniswapV2Factory.sol";
+import {IUniswapV2Router02} from "v2-periphery/interfaces/IUniswapV2Router02.sol";
 import {IERC20} from "openzeppelin-contracts/contracts/token/ERC20/IERC20.sol";
-import {SafeMath} from "openzeppelin-contracts/contracts/utils/math/SafeMath.sol";
 import {IDividendsPairStaking} from "./interfaces/IDividendsPairStaking.sol";
 
 contract DividendsPairStaking is IDividendsPairStaking {
-    using SafeMath for uint256;
-
     uint256 public totalDogFactionAmount;
     uint256 public totalFrogFactionAmount;
-    uint256 public dividendsPerShare;
+    uint256 public dividendsPerFrog;
+    uint256 public dividendsPerDog;
     mapping(address => Staker) public stakers;
     uint256 public totalStakedAmount;
 
     mapping(uint256 => SoupCycle) public soupCycles;
-    uint256 private dividendsPerShareAccuracyFactor = 10 ** 36;
     // TODO: should there be a flag to determine if its time to start soupuing?
     uint256 public currentSoupIndex;
     uint256 public soupCycleDuration = 3 days;
-    IERC20 public LPToken;
 
-    address private _token;
+    IUniswapV2Router02 public router;
+    IERC20 public pair;
+    address private _mucus;
     address private _owner;
 
-    constructor(address owner, address pair) {
-        LPToken = IERC20(pair);
-        _token = msg.sender;
-        _owner = owner;
+    constructor(address mucus, address _uniswapRouter02) {
+        router = IUniswapV2Router02(_uniswapRouter02);
+        address _pair = IUniswapV2Factory(router.factory()).getPair(mucus, router.WETH());
+        pair = IERC20(_pair);
+        _mucus = mucus;
+        _owner = msg.sender;
 
         soupCycles[currentSoupIndex] = SoupCycle({timestamp: block.timestamp, soupedUp: Faction.FROG, totalFrogWins: 0});
     }
 
     modifier onlyTokenOrOwner() {
-        require(msg.sender == _token || msg.sender == _owner);
+        require(msg.sender == _mucus || msg.sender == _owner);
         _;
     }
 
@@ -42,125 +44,193 @@ contract DividendsPairStaking is IDividendsPairStaking {
         _;
     }
 
-    function nextSoupCycle() external view returns (uint256) {
-        return soupCycles[currentSoupIndex].timestamp + soupCycleDuration;
-    }
-
-    function addStake(uint256 amount, Faction faction) external {
-        require(amount > 0, "Cannot stake 0 tokens");
+    function addStake(Faction faction) external payable {
+        require(msg.value > 0, "ETH must be sent to stake");
+        Staker memory staker = stakers[msg.sender];
 
         // This is equivalent to taring it to 0
         // This makes it so that the math to calculate the dps stays consistent
-        if (stakers[msg.sender].totalAmount > 0) {
-            distributeDividend(msg.sender);
+        if (staker.totalAmount > 0) {
+            distributeDividend();
         }
 
-        if (stakers[msg.sender].totalAmount == 0) {
-            stakers[msg.sender] = Staker(amount, dividendsPerShare, 0, 0, block.timestamp + 1 weeks);
-        } else {
-            stakers[msg.sender].totalAmount += amount;
+        uint256 balanceBefore = pair.balanceOf(address(this));
+        addLiquidity();
+        uint256 balanceAfter = pair.balanceOf(address(this));
+        uint256 amount = balanceAfter - balanceBefore;
+
+        // add staker if never staked before
+        if (staker.totalAmount == 0) {
+            staker.previousDividendsPerFrog = dividendsPerFrog;
+            staker.previousDividendsPerDog = dividendsPerDog;
+            staker.lockingEndDate = block.timestamp + 1 weeks;
         }
+        staker.totalAmount += amount;
 
         if (faction == Faction.DOG) {
-            stakers[msg.sender].dogFactionAmount += amount;
+            staker.dogFactionAmount += amount;
             totalDogFactionAmount += amount;
         } else {
-            stakers[msg.sender].frogFactionAmount += amount;
+            staker.frogFactionAmount += amount;
             totalFrogFactionAmount += amount;
         }
         totalStakedAmount += amount;
 
-        LPToken.transferFrom(msg.sender, address(this), amount);
+        stakers[msg.sender] = staker;
 
-        emit StakeAdded(msg.sender, amount);
+        emit StakeAdded(msg.sender, amount, faction);
+    }
+
+    function addLiquidity() private {
+        uint256 ethAmount = msg.value >> 1;
+        uint256 tokenAmount = swapEthForTokens(ethAmount);
+
+        // approve token transfer to cover all possible scenarios
+        IERC20(_mucus).approve(address(router), tokenAmount);
+
+        // add the liquidity
+        // add the liquidity
+        router.addLiquidityETH{value: ethAmount}(
+            address(this),
+            tokenAmount,
+            0, // slippage is unavoidable
+            0, // slippage is unavoidable
+            address(this),
+            block.timestamp
+        );
+    }
+
+    function swapEthForTokens(uint256 ethAmount) private returns (uint256) {
+        // generate the uniswap pair path of token -> weth
+        address[] memory path = new address[](2);
+        path[0] = router.WETH();
+        path[1] = address(_mucus);
+
+        uint256[] memory amounts =
+            router.swapExactETHForTokens{value: ethAmount}(0, path, address(this), block.timestamp);
+
+        return amounts[1];
     }
 
     function removeStake(uint256 amount, Faction faction) external {
-        require(amount >= stakers[msg.sender].totalAmount, "Cannot unstake more than you have staked");
+        Staker memory staker = stakers[msg.sender];
+        require(amount >= staker.totalAmount, "Cannot unstake more than you have staked");
         require(
-            faction != Faction.DOG || stakers[msg.sender].dogFactionAmount >= amount,
+            faction != Faction.DOG || staker.dogFactionAmount >= amount,
             "Cannot unstake more than you have staked for the dog faction"
         );
         require(
-            faction != Faction.FROG || stakers[msg.sender].frogFactionAmount >= amount,
+            faction != Faction.FROG || staker.frogFactionAmount >= amount,
             "Cannot unstake more than you have staked for the frog faction"
         );
-        require(block.timestamp > stakers[msg.sender].lockingEndDate, "Cannot unstake until locking period is over");
+        require(block.timestamp > staker.lockingEndDate, "Cannot unstake until locking period is over");
 
         // This is equivalent to taring it to 0
         // This makes it so that the math to calculate the dps stays consistent
-        if (stakers[msg.sender].totalAmount > 0) {
-            distributeDividend(msg.sender);
-        }
-
-        if (stakers[msg.sender].totalAmount == amount) {
-            delete stakers[msg.sender];
-        } else {
-            stakers[msg.sender].totalAmount -= amount;
+        if (staker.totalAmount > 0) {
+            distributeDividend();
         }
 
         if (faction == Faction.DOG) {
+            staker.dogFactionAmount -= amount;
             totalDogFactionAmount -= amount;
         } else {
+            staker.frogFactionAmount -= amount;
             totalFrogFactionAmount -= amount;
         }
+
+        if (staker.totalAmount == amount) {
+            delete stakers[msg.sender];
+        } else {
+            staker.totalAmount -= amount;
+            stakers[msg.sender] = staker;
+        }
+
         totalStakedAmount -= amount;
 
-        LPToken.transferFrom(address(this), msg.sender, amount);
+        pair.transferFrom(address(this), msg.sender, amount);
+        (uint256 tokenAmount, uint256 ethAmount) = router.removeLiquidityETH(
+            _mucus,
+            amount,
+            0, // slippage is unavoidable
+            0, // slippage is unavoidable
+            address(this),
+            block.timestamp
+        );
 
-        emit StakeRemoved(msg.sender, amount);
+        IERC20(_mucus).transfer(msg.sender, tokenAmount);
+        payable(msg.sender).transfer(ethAmount);
+
+        emit StakeRemoved(msg.sender, amount, faction);
     }
 
-    function removeEntireStake() external {
-        require(stakers[msg.sender].totalAmount > 0, "Cannot unstake if you haven't staked");
-        require(block.timestamp > stakers[msg.sender].lockingEndDate, "Cannot unstake until locking period is over");
+    function vote(uint256 amount, Faction faction) external {
+        require(amount > 0, "Amount must be greater than 0");
+        Staker memory staker = stakers[msg.sender];
 
-        // This is equivalent to taring it to 0
-        // This makes it so that the math to calculate the dps stays consistent
-        distributeDividend(msg.sender);
+        // reset to make it consistent
+        if (staker.totalAmount > 0) {
+            distributeDividend();
+        }
 
-        uint256 amount = stakers[msg.sender].totalAmount;
-        delete stakers[msg.sender];
-        totalStakedAmount -= amount;
+        if (faction == Faction.FROG) {
+            require(staker.dogFactionAmount >= amount, "Cannot swap more Dog votes than you have staked");
 
-        LPToken.transferFrom(address(this), msg.sender, amount);
+            staker.dogFactionAmount -= amount;
+            staker.frogFactionAmount += amount;
+            totalDogFactionAmount -= amount;
+            totalFrogFactionAmount += amount;
+        } else {
+            require(staker.frogFactionAmount >= amount, "Cannot swap more Frog votes than you have staked");
 
-        emit StakeRemoved(msg.sender, amount);
+            staker.frogFactionAmount -= amount;
+            staker.dogFactionAmount += amount;
+            totalFrogFactionAmount -= amount;
+            totalDogFactionAmount += amount;
+        }
+
+        stakers[msg.sender] = staker;
+
+        emit VoteSwapped(msg.sender, amount, faction);
     }
 
     function claim() external {
-        distributeDividend(msg.sender);
+        distributeDividend();
     }
 
-    function distributeDividend(address staker) internal {
-        require(stakers[staker].totalAmount > 0, "Cannot distribute to someone who hasn't staked");
-        uint256 amount = stakers[staker].totalAmount;
-        uint256 previousDividendsPerShare = stakers[staker].previousDividendsPerShare;
+    function distributeDividend() internal {
+        Staker memory staker = stakers[msg.sender];
 
-        uint256 reward = (dividendsPerShare - previousDividendsPerShare) * amount;
+        require(staker.totalAmount > 0, "Cannot distribute to someone who hasn't staked");
+        uint256 frogRewards = (dividendsPerFrog - staker.previousDividendsPerFrog) * staker.frogFactionAmount;
+        uint256 dogRewards = (dividendsPerDog - staker.previousDividendsPerDog) * staker.dogFactionAmount;
 
-        stakers[staker].previousDividendsPerShare = dividendsPerShare;
+        staker.previousDividendsPerFrog = dividendsPerFrog;
+        staker.previousDividendsPerDog = dividendsPerDog;
 
-        // TODO: think about whether there is a case where reward can be 0 here
-        // I'm thinking not since the dividendsPerShare will always be greater than the previousDividendsPerShare, since dividendsPerShare only goes up
-        // this results in dividendsPerShare - previousDividendsPerShare > 0
-        // this means that the only time this can be 0 is when amount is 0
-        // so check to see if amount is 0 before even bothering to try this
-        IERC20(_token).transfer(staker, reward);
+        stakers[msg.sender] = staker;
+
+        if (frogRewards + dogRewards > 0) {
+            IERC20(_mucus).transfer(msg.sender, frogRewards + dogRewards);
+        }
+
+        emit DividendsEarned(msg.sender, frogRewards + dogRewards);
     }
 
     function deposit(uint256 amount) external onlyTokenOrOwner {
         if (amount > 0) {
-            dividendsPerShare =
-                dividendsPerShare.add(dividendsPerShareAccuracyFactor.mul(amount).div(totalStakedAmount));
+            uint256 frogAmount = amount * totalDogFactionAmount / totalStakedAmount;
+            uint256 dogAmount = amount - frogAmount;
+            dividendsPerFrog += frogAmount / totalFrogFactionAmount;
+            dividendsPerDog += dogAmount / totalDogFactionAmount;
         }
 
-        emit DividendsPerShareUpdated(dividendsPerShare);
+        emit DividendsPerShareUpdated(dividendsPerFrog, dividendsPerDog);
     }
 
     function cycleSoup() external onlyTokenOrOwner {
         require(
-            block.timestamp > soupCycles[currentSoupIndex].timestamp + 3 days,
+            block.timestamp > soupCycles[currentSoupIndex].timestamp + 12 hours,
             "Cannot update soup cycle until the current cycle is over"
         );
         currentSoupIndex++;
@@ -169,6 +239,8 @@ contract DividendsPairStaking is IDividendsPairStaking {
         if (soupedUp == Faction.FROG) totalFrogWins++;
         soupCycles[currentSoupIndex] =
             SoupCycle({timestamp: block.timestamp, soupedUp: soupedUp, totalFrogWins: totalFrogWins});
+
+        emit SoupCycled(soupedUp);
     }
 
     function getSoup(uint256 previousSoupIndex)
@@ -179,7 +251,26 @@ contract DividendsPairStaking is IDividendsPairStaking {
         return (currentSoupIndex, soupCycleDuration, soupCycles[previousSoupIndex], soupCycles[currentSoupIndex]);
     }
 
-    function withdraw() external onlyOwner {
+    function nextSoupCycle() external view returns (uint256) {
+        return soupCycles[currentSoupIndex].timestamp + soupCycleDuration;
+    }
+
+    function getSoupedUp() external view returns (Faction) {
+        return soupCycles[currentSoupIndex].soupedUp;
+    }
+
+    function setSoupCycleDuration(uint256 _soupCycleDuration) external onlyOwner {
+        soupCycleDuration = _soupCycleDuration;
+
+        emit SoupCycleDurationUpdated(_soupCycleDuration);
+    }
+
+    function withdrawMucus() external onlyOwner {
+        IERC20 mucus = IERC20(_mucus);
+        mucus.transfer(msg.sender, mucus.balanceOf(address(this)));
+    }
+
+    function withdrawEth() external onlyOwner {
         payable(msg.sender).transfer(address(this).balance);
     }
 }

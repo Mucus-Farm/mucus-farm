@@ -17,6 +17,12 @@ jobs:
         with:
           submodules: recursive
 
+      - name: "Cache RPC Responses"
+        uses: "actions/cache@v3"
+        with:
+          path: "~/.foundry/cache/rpc/mainnet/16183456"
+          key: "${{ runner.os }}-mainnet-16183456"
+
       - name: Install Foundry
         uses: foundry-rs/foundry-toolchain@v1
         with:

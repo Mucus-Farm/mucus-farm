@@ -3,44 +3,39 @@ pragma solidity ^0.8.13;
 
 import {ERC20} from "openzeppelin-contracts/contracts/token/ERC20/ERC20.sol";
 import {IERC20} from "openzeppelin-contracts/contracts/token/ERC20/IERC20.sol";
-import {SafeMath} from "openzeppelin-contracts/contracts/utils/math/SafeMath.sol";
 import {IUniswapV2Factory} from "v2-core/interfaces/IUniswapV2Factory.sol";
 import {IUniswapV2Router02} from "v2-periphery/interfaces/IUniswapV2Router02.sol";
-import {DividendsPairStaking} from "./DividendsPairStaking.sol";
+import {IDividendsPairStaking} from "./interfaces/IDividendsPairStaking.sol";
 
 contract Mucus is ERC20 {
-    using SafeMath for uint256;
-
-    uint256 private tokenSupply = 9393 * 1e8 * 1e18;
-    uint256 public teamFee = 2;
-    uint256 public stakerFee = 2;
-    uint256 public liquidityFee = 2;
-    uint256 public totalFee = teamFee + stakerFee + liquidityFee;
-    uint256 public denominator = 100;
-
-    address _owner;
-
-    // swapping back logic
-    uint256 public swapTokensAtAmount = 278787 * 1e18;
+    uint16 public teamFee = 2;
+    uint16 public stakerFee = 2;
+    uint16 public liquidityFee = 2;
+    uint16 public totalFee = teamFee + stakerFee + liquidityFee;
+    uint16 public denominator = 100;
     bool private swapping;
     bool public swapEnabled = true;
+    uint256 private tokenSupply = 9393 * 1e8 * 1e18;
+    uint256 public swapTokensAtAmount = 278787 * 1e18;
 
-    // fees and what not
     mapping(address => bool) private isFeeExempt;
     address teamWallet;
+    address _owner;
 
-    DividendsPairStaking private dividendsPairStaking;
+    IDividendsPairStaking private dividendsPairStaking;
     IUniswapV2Router02 public router;
     address public pair;
     address public mucusFarm;
 
-    constructor(address _mucusFarm) ERC20("Mucus", "MUCUS") {
-        router = IUniswapV2Router02(0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D);
+    constructor(address _uniswapRouter02) ERC20("Mucus", "MUCUS") {
+        router = IUniswapV2Router02(_uniswapRouter02);
         pair = IUniswapV2Factory(router.factory()).createPair(address(this), router.WETH());
-        dividendsPairStaking = new DividendsPairStaking(msg.sender, pair);
+
+        isFeeExempt[address(router)] = true;
+        isFeeExempt[address(this)] = true;
+        isFeeExempt[_owner] = true;
 
         _owner = msg.sender;
-        mucusFarm = _mucusFarm;
         _mint(msg.sender, tokenSupply);
     }
 
@@ -88,7 +83,7 @@ contract Mucus is ERC20 {
         uint256 fees = 0;
         // don't run this if it's currently swapping, if either the sender or the reciever is fee exempt, or if it's not a buy or sell
         if (!swapping && !(isFeeExempt[from] || isFeeExempt[to]) && (pair == from || pair == to)) {
-            fees = amount.mul(totalFee).div(denominator);
+            fees = amount * totalFee / denominator;
             if (fees > 0) {
                 super._transfer(from, address(this), fees);
             }
@@ -101,16 +96,17 @@ contract Mucus is ERC20 {
 
     function swapBack() private {
         uint256 currentBalance = balanceOf(address(this));
-        uint256 tokensForStakers = currentBalance.mul(stakerFee).div(totalFee);
-        uint256 tokensForliquidity = currentBalance.mul(liquidityFee / 2).div(totalFee);
-        uint256 tokensToSwapForEth = currentBalance.sub(tokensForStakers).sub(tokensForliquidity);
+        uint256 liquidityFeeHalf = liquidityFee >> 1; // shifts it to the right by one bit, which is the same as dividing by 2
+        uint256 tokensForStakers = currentBalance * stakerFee / totalFee;
+        uint256 tokensForliquidity = currentBalance * liquidityFeeHalf / totalFee;
+        uint256 tokensToSwapForEth = currentBalance - tokensForStakers - tokensForliquidity;
 
         uint256 initialEthBalance = address(this).balance;
         swapTokensForEth(tokensToSwapForEth);
         uint256 ethBalance = address(this).balance - initialEthBalance;
 
-        uint256 ethForLiquidity = ethBalance.mul(liquidityFee / 2).div((liquidityFee / 2) + teamFee);
-        uint256 ethForTeam = ethBalance.sub(ethForLiquidity);
+        uint256 ethForLiquidity = ethBalance * liquidityFeeHalf / (liquidityFeeHalf + teamFee);
+        uint256 ethForTeam = ethBalance - ethForLiquidity;
 
         addLiquidity(tokensForliquidity, ethForLiquidity);
 
@@ -159,6 +155,12 @@ contract Mucus is ERC20 {
 
     function setMucusFarm(address _mucusFarm) external onlyOwner {
         mucusFarm = _mucusFarm;
+        isFeeExempt[_mucusFarm] = true;
+    }
+
+    function setDividendsPairStaking(address _dividendsPairStaking) external onlyOwner {
+        dividendsPairStaking = IDividendsPairStaking(_dividendsPairStaking);
+        isFeeExempt[_dividendsPairStaking] = true;
     }
 
     function withdraw() external onlyOwner {

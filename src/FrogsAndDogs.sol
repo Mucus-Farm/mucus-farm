@@ -9,6 +9,7 @@ import {VRFConsumerBaseV2} from "chainlink/contracts/src/v0.8/vrf/VRFConsumerBas
 import {IFrogsAndDogs} from "./interfaces/IFrogsAndDogs.sol";
 import {IMucusFarm} from "./interfaces/IMucusFarm.sol";
 import {IMucus} from "./interfaces/IMucus.sol";
+import {IDividendsPairStaking} from "./interfaces/IDividendsPairStaking.sol";
 
 contract FrogsAndDogs is IFrogsAndDogs, ERC721, VRFConsumerBaseV2, Ownable, Pausable {
     uint256 public constant ETH_MINT_PRICE = 0.03131 ether;
@@ -26,6 +27,7 @@ contract FrogsAndDogs is IFrogsAndDogs, ERC721, VRFConsumerBaseV2, Ownable, Paus
 
     uint256 public tokensPaidInEth = 2000; // 1/3 of the supply
     string public baseURI; // setup endpoint that grabs the images and denies access to images for tokenIds that aren't minted yet
+    string public contractURI; // setup endpoint that grabs the images and denies access to images for tokenIds that aren't minted yet
 
     // see https://docs.chain.link/docs/vrf/v2/subscription/supported-networks/#configurations
     bytes32 public keyHash = 0x474e34a077df58807dbe9c96d3c009b23b3c6d0cce433e59bbf5b34f823bc56c;
@@ -45,18 +47,25 @@ contract FrogsAndDogs is IFrogsAndDogs, ERC721, VRFConsumerBaseV2, Ownable, Paus
     uint64 private subscriptionId;
 
     VRFCoordinatorV2Interface public immutable vrfCoordinator;
+    IDividendsPairStaking dividendsPairStaking;
     IMucusFarm public mucusFarm;
     IMucus public mucus;
 
-    constructor(uint64 _subscriptionId, string memory _initialBaseURI, address _mucusFarm, address _mucus)
-        ERC721("Frogs and Dogs", "FND")
-        VRFConsumerBaseV2(0x8103B0A8A00be2DDC778e6e7eaa21791Cd364625)
-    {
+    constructor(
+        uint64 _subscriptionId,
+        string memory _initialBaseURI,
+        string memory _initialContractURI,
+        address _mucusFarm,
+        address _mucus,
+        address _dividendsPerStaking
+    ) ERC721("Frogs and Dogs", "FND") VRFConsumerBaseV2(0x8103B0A8A00be2DDC778e6e7eaa21791Cd364625) {
         vrfCoordinator = VRFCoordinatorV2Interface(0x8103B0A8A00be2DDC778e6e7eaa21791Cd364625);
         mucusFarm = IMucusFarm(_mucusFarm);
         mucus = IMucus(_mucus);
+        dividendsPairStaking = IDividendsPairStaking(_dividendsPerStaking);
         subscriptionId = _subscriptionId;
         baseURI = _initialBaseURI;
+        contractURI = _initialContractURI;
     }
 
     function mint(uint256 amount, bool stake) external payable {
@@ -195,8 +204,9 @@ contract FrogsAndDogs is IFrogsAndDogs, ERC721, VRFConsumerBaseV2, Ownable, Paus
      * @return recipient address of the recipient (either the minter or the Wolf thief's owner)
      */
     function selectRecipient(uint256 rng, address parent) internal view returns (address) {
-        uint256 seed = uint256(keccak256(abi.encodePacked(rng, minted)));
-        if (seed % 10 != 0) return parent; // 10% chance to steal
+        uint256 tokenId = minted;
+        uint256 seed = uint256(keccak256(abi.encodePacked(rng, tokenId)));
+        if (seed % 10 != 0 || tokenId % 2 == uint256(dividendsPairStaking.getSoupedUp())) return parent; // 10% chance to steal if their side is not winning
         // If it's minting a dog, chance for giga frog to steal. vice versa
         address thief =
             mucusFarm.randomGigaOrChad(seed, minted % 2 == 0 ? IMucusFarm.Faction.DOG : IMucusFarm.Faction.FROG);
