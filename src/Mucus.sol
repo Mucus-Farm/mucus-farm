@@ -7,6 +7,8 @@ import {IUniswapV2Factory} from "v2-core/interfaces/IUniswapV2Factory.sol";
 import {IUniswapV2Router02} from "v2-periphery/interfaces/IUniswapV2Router02.sol";
 import {IDividendsPairStaking} from "./interfaces/IDividendsPairStaking.sol";
 
+import "forge-std/console.sol";
+
 contract Mucus is ERC20 {
     uint16 public teamFee = 2;
     uint16 public stakerFee = 2;
@@ -33,7 +35,7 @@ contract Mucus is ERC20 {
 
         isFeeExempt[address(router)] = true;
         isFeeExempt[address(this)] = true;
-        isFeeExempt[_owner] = true;
+        isFeeExempt[msg.sender] = true;
 
         _owner = msg.sender;
         _mint(msg.sender, tokenSupply);
@@ -68,15 +70,13 @@ contract Mucus is ERC20 {
         uint256 contractTokenBalance = balanceOf(address(this));
         bool canSwap = contractTokenBalance >= swapTokensAtAmount;
 
-        // maybe there doesn't need to be a swap back function?
-        // Does more liquidity need to be added in?
-        if (canSwap && !swapping && from != address(pair) && !isFeeExempt[from]) {
+        if (canSwap && !swapping && from != address(pair)) {
             swapping = true;
             swapBack();
             swapping = false;
         }
 
-        if (block.timestamp >= dividendsPairStaking.nextSoupCycle()) {
+        if (!swapping && block.timestamp >= dividendsPairStaking.nextSoupCycle()) {
             dividendsPairStaking.cycleSoup();
         }
 
@@ -101,9 +101,12 @@ contract Mucus is ERC20 {
         uint256 tokensForliquidity = currentBalance * liquidityFeeHalf / totalFee;
         uint256 tokensToSwapForEth = currentBalance - tokensForStakers - tokensForliquidity;
 
+        console.log("should be getting in the swap back");
+
         uint256 initialEthBalance = address(this).balance;
         swapTokensForEth(tokensToSwapForEth);
         uint256 ethBalance = address(this).balance - initialEthBalance;
+        console.log("tokens have been swapped for ETH: ", ethBalance);
 
         uint256 ethForLiquidity = ethBalance * liquidityFeeHalf / (liquidityFeeHalf + teamFee);
         uint256 ethForTeam = ethBalance - ethForLiquidity;
@@ -166,4 +169,6 @@ contract Mucus is ERC20 {
     function withdraw() external onlyOwner {
         payable(msg.sender).transfer(address(this).balance);
     }
+
+    receive() external payable {}
 }

@@ -34,6 +34,17 @@ contract DividendsPairStaking is IDividendsPairStaking {
         soupCycles[currentSoupIndex] = SoupCycle({timestamp: block.timestamp, soupedUp: Faction.FROG, totalFrogWins: 0});
     }
 
+    // TESTING
+    function getStaker()
+        external
+        view
+        returns (uint256 totalAmount, uint256 dogFactionAmount, uint256 frogFactionAmount)
+    {
+        Staker memory staker = stakers[msg.sender];
+
+        return (staker.totalAmount, staker.dogFactionAmount, staker.frogFactionAmount);
+    }
+
     modifier onlyTokenOrOwner() {
         require(msg.sender == _mucus || msg.sender == _owner);
         _;
@@ -91,7 +102,7 @@ contract DividendsPairStaking is IDividendsPairStaking {
         // add the liquidity
         // add the liquidity
         router.addLiquidityETH{value: ethAmount}(
-            address(this),
+            _mucus,
             tokenAmount,
             0, // slippage is unavoidable
             0, // slippage is unavoidable
@@ -217,12 +228,19 @@ contract DividendsPairStaking is IDividendsPairStaking {
         emit DividendsEarned(msg.sender, frogRewards + dogRewards);
     }
 
+    // TODO: think this through whether it should have the if statement check to see if total staked amount should be greater than 0
+    // or if it should just do plus one here to avoid division by 0
+    // +1 ensures that the funds don't go to waste, but at the same time, it highly favours the frogs
+    // the check for totalStakedAmount prevents it from erroring out, but has the chance of the funds going to waste
+    //
+    // When deploying the contracts, need to ensure to both deposit liquidity directly and then addStake on top twice
+    // once for frog and once for dog
     function deposit(uint256 amount) external onlyTokenOrOwner {
-        if (amount > 0) {
-            uint256 frogAmount = amount * totalDogFactionAmount / totalStakedAmount;
+        if (amount > 0 && totalStakedAmount > 0) {
+            uint256 frogAmount = amount * (totalDogFactionAmount + 1) / totalStakedAmount;
             uint256 dogAmount = amount - frogAmount;
-            dividendsPerFrog += frogAmount / totalFrogFactionAmount;
-            dividendsPerDog += dogAmount / totalDogFactionAmount;
+            dividendsPerFrog += frogAmount / (totalFrogFactionAmount + 1);
+            dividendsPerDog += dogAmount / (totalDogFactionAmount + 1);
         }
 
         emit DividendsPerShareUpdated(dividendsPerFrog, dividendsPerDog);
@@ -273,4 +291,6 @@ contract DividendsPairStaking is IDividendsPairStaking {
     function withdrawEth() external onlyOwner {
         payable(msg.sender).transfer(address(this).balance);
     }
+
+    receive() external payable {}
 }
