@@ -241,7 +241,7 @@ contract MucusFarm is IMucusFarm, IERC721Receiver, Pausable {
             // -1 to account for the previous leftover cycle and if the previous recorded cycle was a frog cycle
             uint256 soupCyclesPassed = currentSoupIndex - stake.previousSoupIndex - 1;
             uint256 totalFrogWinsPassed =
-                currentSoupCycle.totalFrogWins - previousSoupCycle.totalFrogWins - uint256(previousSoupCycle.soupedUp); // If the previous leftover cycle was a frog cycle, don't count it again
+                currentSoupCycle.totalFrogWins - previousSoupCycle.totalFrogWins - uint256(currentSoupCycle.soupedUp); // If the current cycle is a frog cycle, don't count it
             uint256 totalDogWinsPassed = soupCyclesPassed - totalFrogWinsPassed;
             if (_isFrog(tokenId)) {
                 claimableTax += totalDogWinsPassed * soupCycleDuration * mucusRate * 20 / 100 / 1 days;

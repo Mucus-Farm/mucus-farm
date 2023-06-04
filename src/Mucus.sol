@@ -5,9 +5,8 @@ import {ERC20} from "openzeppelin-contracts/contracts/token/ERC20/ERC20.sol";
 import {IERC20} from "openzeppelin-contracts/contracts/token/ERC20/IERC20.sol";
 import {IUniswapV2Factory} from "v2-core/interfaces/IUniswapV2Factory.sol";
 import {IUniswapV2Router02} from "v2-periphery/interfaces/IUniswapV2Router02.sol";
+import {IUniswapV2Pair} from "v2-core/interfaces/IUniswapV2Pair.sol";
 import {IDividendsPairStaking} from "./interfaces/IDividendsPairStaking.sol";
-
-import "forge-std/console.sol";
 
 contract Mucus is ERC20 {
     uint16 public teamFee = 2;
@@ -21,16 +20,16 @@ contract Mucus is ERC20 {
     uint256 public swapTokensAtAmount = 278787 * 1e18;
 
     mapping(address => bool) private isFeeExempt;
-    address teamWallet;
-    address _owner;
+    address private teamWallet;
+    address private _owner;
 
-    IDividendsPairStaking private dividendsPairStaking;
+    IDividendsPairStaking public dividendsPairStaking;
     IUniswapV2Router02 public router;
     address public pair;
     address public mucusFarm;
 
-    constructor(address _uniswapRouter02) ERC20("Mucus", "MUCUS") {
-        router = IUniswapV2Router02(_uniswapRouter02);
+    constructor(address _teamWallet) ERC20("Mucus", "MUCUS") {
+        router = IUniswapV2Router02(0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D);
         pair = IUniswapV2Factory(router.factory()).createPair(address(this), router.WETH());
 
         isFeeExempt[address(router)] = true;
@@ -38,6 +37,7 @@ contract Mucus is ERC20 {
         isFeeExempt[msg.sender] = true;
 
         _owner = msg.sender;
+        teamWallet = _teamWallet;
         _mint(msg.sender, tokenSupply);
     }
 
@@ -59,13 +59,6 @@ contract Mucus is ERC20 {
         _burn(account, amount);
     }
 
-    // Time based rewards?
-    // When a new staker comes on and stakes their LP tokens, the last recorded divdendsPerLP is set in their struct
-    // When they go to claim, the difference between the current dividendsPerLP and the current dividendsPerLP is rewarded and
-    // the dividendsPerLP is updated to the current dividendsPerLP
-    // This allows for early investors to be able to be rewarded more since its on a time basis. So every x amount of trades that happen
-    // It will get recorded for them in the dividendsPerLP variable
-    // could technically be as simple as dividendsPerLP = dividendsPerLP + (currentContractBalance / totalLPs)
     function _transfer(address from, address to, uint256 amount) internal override {
         uint256 contractTokenBalance = balanceOf(address(this));
         bool canSwap = contractTokenBalance >= swapTokensAtAmount;
@@ -96,27 +89,22 @@ contract Mucus is ERC20 {
 
     function swapBack() private {
         uint256 currentBalance = balanceOf(address(this));
-        uint256 liquidityFeeHalf = liquidityFee >> 1; // shifts it to the right by one bit, which is the same as dividing by 2
+        uint16 liquidityFeeHalf = liquidityFee >> 1; // shifts it to the right by one bit, which is the same as dividing by 2
         uint256 tokensForStakers = currentBalance * stakerFee / totalFee;
         uint256 tokensForliquidity = currentBalance * liquidityFeeHalf / totalFee;
         uint256 tokensToSwapForEth = currentBalance - tokensForStakers - tokensForliquidity;
 
-        console.log("should be getting in the swap back");
-
         uint256 initialEthBalance = address(this).balance;
         swapTokensForEth(tokensToSwapForEth);
         uint256 ethBalance = address(this).balance - initialEthBalance;
-        console.log("tokens have been swapped for ETH: ", ethBalance);
 
         uint256 ethForLiquidity = ethBalance * liquidityFeeHalf / (liquidityFeeHalf + teamFee);
         uint256 ethForTeam = ethBalance - ethForLiquidity;
 
         addLiquidity(tokensForliquidity, ethForLiquidity);
 
-        bool stakersTransferSuccess = super.transfer(address(dividendsPairStaking), tokensForStakers);
-        if (stakersTransferSuccess) {
-            dividendsPairStaking.deposit(tokensForStakers);
-        }
+        super._transfer(address(this), address(dividendsPairStaking), tokensForStakers);
+        dividendsPairStaking.deposit(tokensForStakers);
 
         (bool teamTransferSuccess,) = address(teamWallet).call{value: ethForTeam}("");
         require(teamTransferSuccess, "Failed to send ETH to team wallet");
@@ -131,7 +119,7 @@ contract Mucus is ERC20 {
         _approve(address(this), address(router), tokenAmount);
 
         // make the swap
-        router.swapExactTokensForETHSupportingFeeOnTransferTokens(
+        router.swapExactTokensForETH(
             tokenAmount,
             0, // accept any amount of ETH
             path,
@@ -144,7 +132,6 @@ contract Mucus is ERC20 {
         // approve token transfer to cover all possible scenarios
         _approve(address(this), address(router), tokenAmount);
 
-        // add the liquidity
         // add the liquidity
         router.addLiquidityETH{value: ethAmount}(
             address(this),
@@ -164,6 +151,10 @@ contract Mucus is ERC20 {
     function setDividendsPairStaking(address _dividendsPairStaking) external onlyOwner {
         dividendsPairStaking = IDividendsPairStaking(_dividendsPairStaking);
         isFeeExempt[_dividendsPairStaking] = true;
+    }
+
+    function setIsFeeExempt(address _feeExempt) external onlyOwner {
+        isFeeExempt[_feeExempt] = true;
     }
 
     function withdraw() external onlyOwner {

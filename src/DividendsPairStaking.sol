@@ -24,25 +24,14 @@ contract DividendsPairStaking is IDividendsPairStaking {
     address private _mucus;
     address private _owner;
 
-    constructor(address mucus, address _uniswapRouter02) {
-        router = IUniswapV2Router02(_uniswapRouter02);
+    constructor(address mucus) {
+        router = IUniswapV2Router02(0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D);
         address _pair = IUniswapV2Factory(router.factory()).getPair(mucus, router.WETH());
         pair = IERC20(_pair);
         _mucus = mucus;
         _owner = msg.sender;
 
-        soupCycles[currentSoupIndex] = SoupCycle({timestamp: block.timestamp, soupedUp: Faction.FROG, totalFrogWins: 0});
-    }
-
-    // TESTING
-    function getStaker()
-        external
-        view
-        returns (uint256 totalAmount, uint256 dogFactionAmount, uint256 frogFactionAmount)
-    {
-        Staker memory staker = stakers[msg.sender];
-
-        return (staker.totalAmount, staker.dogFactionAmount, staker.frogFactionAmount);
+        soupCycles[currentSoupIndex] = SoupCycle({timestamp: block.timestamp, soupedUp: Faction.FROG, totalFrogWins: 1});
     }
 
     modifier onlyTokenOrOwner() {
@@ -74,7 +63,7 @@ contract DividendsPairStaking is IDividendsPairStaking {
         if (staker.totalAmount == 0) {
             staker.previousDividendsPerFrog = dividendsPerFrog;
             staker.previousDividendsPerDog = dividendsPerDog;
-            staker.lockingEndDate = block.timestamp + 1 weeks;
+            staker.lockingEndDate = block.timestamp + 2 weeks;
         }
         staker.totalAmount += amount;
 
@@ -228,19 +217,12 @@ contract DividendsPairStaking is IDividendsPairStaking {
         emit DividendsEarned(msg.sender, frogRewards + dogRewards);
     }
 
-    // TODO: think this through whether it should have the if statement check to see if total staked amount should be greater than 0
-    // or if it should just do plus one here to avoid division by 0
-    // +1 ensures that the funds don't go to waste, but at the same time, it highly favours the frogs
-    // the check for totalStakedAmount prevents it from erroring out, but has the chance of the funds going to waste
-    //
-    // When deploying the contracts, need to ensure to both deposit liquidity directly and then addStake on top twice
-    // once for frog and once for dog
     function deposit(uint256 amount) external onlyTokenOrOwner {
-        if (amount > 0 && totalStakedAmount > 0) {
-            uint256 frogAmount = amount * (totalDogFactionAmount + 1) / totalStakedAmount;
+        if (amount > 0 && totalFrogFactionAmount > 0 && totalDogFactionAmount > 0) {
+            uint256 frogAmount = amount * totalDogFactionAmount / totalStakedAmount;
             uint256 dogAmount = amount - frogAmount;
-            dividendsPerFrog += frogAmount / (totalFrogFactionAmount + 1);
-            dividendsPerDog += dogAmount / (totalDogFactionAmount + 1);
+            dividendsPerFrog += frogAmount / totalFrogFactionAmount;
+            dividendsPerDog += dogAmount / totalDogFactionAmount;
         }
 
         emit DividendsPerShareUpdated(dividendsPerFrog, dividendsPerDog);
