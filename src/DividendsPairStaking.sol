@@ -5,6 +5,7 @@ import {IUniswapV2Factory} from "v2-core/interfaces/IUniswapV2Factory.sol";
 import {IUniswapV2Router02} from "v2-periphery/interfaces/IUniswapV2Router02.sol";
 import {IERC20} from "openzeppelin-contracts/contracts/token/ERC20/IERC20.sol";
 import {IDividendsPairStaking} from "./interfaces/IDividendsPairStaking.sol";
+// import {console} from "forge-std/console.sol";
 
 contract DividendsPairStaking is IDividendsPairStaking {
     uint256 public totalDogFactionAmount;
@@ -59,26 +60,26 @@ contract DividendsPairStaking is IDividendsPairStaking {
         uint256 balanceAfter = pair.balanceOf(address(this));
         uint256 amount = balanceAfter - balanceBefore;
 
-        // add staker if never staked before
-        if (staker.totalAmount == 0) {
-            staker.previousDividendsPerFrog = dividendsPerFrog;
-            staker.previousDividendsPerDog = dividendsPerDog;
-            staker.lockingEndDate = block.timestamp + 2 weeks;
-        }
-        staker.totalAmount += amount;
+        // // add staker if never staked before
+        // if (staker.totalAmount == 0) {
+        //     staker.previousDividendsPerFrog = dividendsPerFrog;
+        //     staker.previousDividendsPerDog = dividendsPerDog;
+        //     staker.lockingEndDate = block.timestamp + 2 weeks;
+        // }
+        // staker.totalAmount += amount;
 
-        if (faction == Faction.DOG) {
-            staker.dogFactionAmount += amount;
-            totalDogFactionAmount += amount;
-        } else {
-            staker.frogFactionAmount += amount;
-            totalFrogFactionAmount += amount;
-        }
-        totalStakedAmount += amount;
+        // if (faction == Faction.DOG) {
+        //     staker.dogFactionAmount += amount;
+        //     totalDogFactionAmount += amount;
+        // } else {
+        //     staker.frogFactionAmount += amount;
+        //     totalFrogFactionAmount += amount;
+        // }
+        // totalStakedAmount += amount;
 
-        stakers[msg.sender] = staker;
+        // stakers[msg.sender] = staker;
 
-        emit StakeAdded(msg.sender, amount, faction);
+        // emit StakeAdded(msg.sender, amount, faction);
     }
 
     function addLiquidity() private {
@@ -88,7 +89,6 @@ contract DividendsPairStaking is IDividendsPairStaking {
         // approve token transfer to cover all possible scenarios
         IERC20(_mucus).approve(address(router), tokenAmount);
 
-        // add the liquidity
         // add the liquidity
         router.addLiquidityETH{value: ethAmount}(
             _mucus,
@@ -108,6 +108,8 @@ contract DividendsPairStaking is IDividendsPairStaking {
 
         uint256[] memory amounts =
             router.swapExactETHForTokens{value: ethAmount}(0, path, address(this), block.timestamp);
+
+        // console.log("amount: ", amounts[1]);
 
         return amounts[1];
     }

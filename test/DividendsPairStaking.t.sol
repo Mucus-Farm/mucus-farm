@@ -9,6 +9,7 @@ import {IERC20} from "openzeppelin-contracts/contracts/token/ERC20/IERC20.sol";
 import {IUniswapV2Factory} from "v2-core/interfaces/IUniswapV2Factory.sol";
 import {IUniswapV2Router02} from "v2-periphery/interfaces/IUniswapV2Router02.sol";
 import {IUniswapV2Pair} from "v2-core/interfaces/IUniswapV2Pair.sol";
+import {UniswapV2Library} from "v2-periphery/libraries/UniswapV2Library.sol";
 
 contract Initial is Test {
     Mucus public mucus;
@@ -90,3 +91,15 @@ contract DpsConstructor is Initial {
         assertEq(previousSoupCycle.totalFrogWins, 1, "previousSoupCycle.totalFrogWins");
     }
 }
+
+// contract DpsStaking is Initial {
+//     function testAddStake() public {
+//         uint256 ethAmount = 1000 ether;
+
+//         uint256 ethToSwap = ethAmount >> 1;
+//         (uint256 reserve0, uint256 reserve1) = pair.getReserves();
+//         uint256 mucusOut = UniswapV2Library.getAmountsOut(ethToSwap, reserve0, reserve1);
+
+//         console.log("mucus out: ", mucusOut);
+//     }
+// }
