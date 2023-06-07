@@ -10,7 +10,7 @@ library UniswapV2Library {
 
     // given an input amount of an asset and pair reserves, returns the maximum output amount of the other asset
     function getAmountOut(uint256 amountIn, uint256 reserveIn, uint256 reserveOut)
-        external
+        internal
         pure
         returns (uint256 amountOut)
     {

@@ -52,9 +52,9 @@ contract DividendsPairStaking is IDividendsPairStaking {
 
         // This is equivalent to taring it to 0
         // This makes it so that the math to calculate the dps stays consistent
-        if (staker.totalAmount > 0) {
-            distributeDividend();
-        }
+        // if (staker.totalAmount > 0) {
+        //     distributeDividend();
+        // }
 
         uint256 amount = addLiquidity();
 
@@ -62,8 +62,8 @@ contract DividendsPairStaking is IDividendsPairStaking {
         if (staker.totalAmount == 0) {
             staker.previousDividendsPerFrog = dividendsPerFrog;
             staker.previousDividendsPerDog = dividendsPerDog;
-            staker.lockingEndDate = block.timestamp + 2 weeks;
         }
+        staker.lockingEndDate = block.timestamp + 2 weeks;
         staker.totalAmount += amount;
 
         if (faction == Faction.DOG) {
@@ -82,10 +82,16 @@ contract DividendsPairStaking is IDividendsPairStaking {
 
     function addLiquidity() private returns (uint256) {
         uint256 ethAmount = msg.value >> 1;
+        (uint256 reserve0, uint256 reserve1,) = IUniswapV2Pair(address(pair)).getReserves();
+        console.log("contract reserves before the swap: ", reserve0, reserve1);
+
         uint256 tokenAmount = swapEthForTokens(ethAmount);
 
         // approve token transfer to cover all possible scenarios
         IERC20(_mucus).approve(address(router), tokenAmount);
+
+        (uint256 reserve0After, uint256 reserve1After,) = IUniswapV2Pair(address(pair)).getReserves();
+        console.log("contract reserves after the swap: ", reserve0After, reserve1After);
 
         // add the liquidity
         (,, uint256 liquidity) = router.addLiquidityETH{value: ethAmount}(
@@ -97,6 +103,10 @@ contract DividendsPairStaking is IDividendsPairStaking {
             block.timestamp
         );
 
+        (uint256 r0, uint256 r1,) = IUniswapV2Pair(address(pair)).getReserves();
+        console.log("contract reserves after added liquidity: ", r0, r1);
+        console.log("======================");
+
         return liquidity;
     }
 
@@ -106,8 +116,16 @@ contract DividendsPairStaking is IDividendsPairStaking {
         path[0] = router.WETH();
         path[1] = address(_mucus);
 
+        // (uint256 reserve0, uint256 reserve1,) = IUniswapV2Pair(address(pair)).getReserves();
+        // console.log("contract reserves: ", reserve0, reserve1);
+        // console.log("eth amount: ", ethAmount);
+
+        console.log("msg value: ", msg.value);
         uint256[] memory amounts =
             router.swapExactETHForTokens{value: ethAmount}(0, path, address(this), block.timestamp);
+
+        console.log("contract amount: ", amounts[1]);
+        // console.log("============");
 
         return amounts[1];
     }
