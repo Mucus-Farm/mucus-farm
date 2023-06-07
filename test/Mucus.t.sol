@@ -56,7 +56,6 @@ contract Initial is Test {
         mucus.approve(address(router), tokenAmount);
 
         // add the liquidity
-        // add the liquidity
         router.addLiquidityETH{value: ethAmount}(
             address(mucus),
             tokenAmount,

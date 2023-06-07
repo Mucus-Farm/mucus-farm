@@ -9,7 +9,8 @@ import {IERC20} from "openzeppelin-contracts/contracts/token/ERC20/IERC20.sol";
 import {IUniswapV2Factory} from "v2-core/interfaces/IUniswapV2Factory.sol";
 import {IUniswapV2Router02} from "v2-periphery/interfaces/IUniswapV2Router02.sol";
 import {IUniswapV2Pair} from "v2-core/interfaces/IUniswapV2Pair.sol";
-import {UniswapV2Library} from "v2-periphery/libraries/UniswapV2Library.sol";
+import {UniswapV2Library} from "./lib/UniswapV2Library.sol";
+import {Math} from "openzeppelin-contracts/contracts/utils/math/Math.sol";
 
 contract Initial is Test {
     Mucus public mucus;
@@ -22,8 +23,8 @@ contract Initial is Test {
     uint256 public tokenAmount = 100000000000 ether;
     uint256 public swapTokensAtAmount = 278787 * 1e18;
 
-    uint256 frog = uint256(IDividendsPairStaking.Faction.FROG);
-    uint256 dog = uint256(IDividendsPairStaking.Faction.DOG);
+    IDividendsPairStaking.Faction frog = IDividendsPairStaking.Faction.FROG;
+    IDividendsPairStaking.Faction dog = IDividendsPairStaking.Faction.DOG;
 
     address public teamWallet = address(123);
     address public owner = address(1);
@@ -77,29 +78,66 @@ contract Initial is Test {
 
 contract DpsConstructor is Initial {
     function testConstructor() public {
-        (
-            uint256 currentSoupIndex,
-            uint256 soupCycleDuration,
-            IDividendsPairStaking.SoupCycle memory previousSoupCycle,
-            IDividendsPairStaking.SoupCycle memory currentSoupCycle
-        ) = dps.getSoup(dps.currentSoupIndex());
+        (uint256 currentSoupIndex, uint256 soupCycleDuration, IDividendsPairStaking.SoupCycle memory previousSoupCycle,)
+        = dps.getSoup(dps.currentSoupIndex());
 
         assertEq(currentSoupIndex, 0, "currentSoupIndex");
         assertEq(soupCycleDuration, 3 days, "soupCycleDuration");
         assertEq(previousSoupCycle.timestamp, block.timestamp, "previousSoupCycle.timestamp");
-        assertEq(uint256(previousSoupCycle.soupedUp), frog, "previousSoupCycle.soupedUp");
+        assertEq(uint256(previousSoupCycle.soupedUp), uint256(frog), "previousSoupCycle.soupedUp");
         assertEq(previousSoupCycle.totalFrogWins, 1, "previousSoupCycle.totalFrogWins");
     }
 }
 
-// contract DpsStaking is Initial {
-//     function testAddStake() public {
-//         uint256 ethAmount = 1000 ether;
+contract DpsStaking is Initial {
+    event StakeAdded(address indexed staker, uint256 amount, IDividendsPairStaking.Faction faction);
+    event StakeRemoved(address indexed staker, uint256 amount, IDividendsPairStaking.Faction faction);
+    event DividendsPerShareUpdated(uint256 dividendsPerFrog, uint256 dividendsPerDog);
+    event DividendsEarned(address indexed staker, uint256 amount);
 
-//         uint256 ethToSwap = ethAmount >> 1;
-//         (uint256 reserve0, uint256 reserve1) = pair.getReserves();
-//         uint256 mucusOut = UniswapV2Library.getAmountsOut(ethToSwap, reserve0, reserve1);
+    function testInitialAddStake() public {
+        vm.startPrank(address(2));
 
-//         console.log("mucus out: ", mucusOut);
-//     }
-// }
+        deal(address(2), 1000 ether);
+        uint256 ethToStake = 1000 ether;
+
+        uint256 ethAmount = ethToStake >> 1;
+        (uint256 reserve0, uint256 reserve1,) = pair.getReserves();
+        uint256 mucusAmount = UniswapV2Library.getAmountOut(ethAmount, reserve0, reserve1);
+
+        uint256 reserve0AfterSwap = reserve0 - mucusAmount;
+        uint256 reserve1AfterSwap = reserve1 + ethAmount;
+
+        uint256 liquidity = UniswapV2Library.liquidityTokensMinted(
+            address(pair), reserve0AfterSwap, reserve1AfterSwap, mucusAmount, ethAmount
+        );
+
+        vm.expectEmit(true, true, true, true);
+
+        emit StakeAdded(address(2), liquidity, frog);
+
+        dps.addStake{value: ethToStake}(frog);
+        (
+            uint256 totalAmount,
+            uint256 frogFactionAmount,
+            uint256 dogFactionAmount,
+            uint256 previousDividendsPerFrog,
+            uint256 previousDividendsPerDog,
+            uint256 lockingEndDate
+        ) = dps.stakers(address(2));
+
+        // dps assertions
+        assertEq(pair.balanceOf(address(dps)), liquidity, "balance of dps");
+        assertEq(totalAmount, liquidity, "totalAmount");
+        assertEq(dps.totalStakedAmount(), liquidity, "totalStakedAmount");
+        assertEq(dps.totalFrogFactionAmount(), liquidity, "totalFrogFactionAmount");
+        assertEq(dps.totalDogFactionAmount(), 0, "totalDogFactionAmount");
+
+        // staker assertions
+        assertEq(frogFactionAmount, liquidity, "frogFactionAmount");
+        assertEq(dogFactionAmount, 0, "dogFactionAmount");
+        assertEq(previousDividendsPerFrog, 0, "previousDividendsPerFrog");
+        assertEq(previousDividendsPerDog, 0, "previousDividendsPerDog");
+        assertEq(lockingEndDate, block.timestamp + 2 weeks, "lockingEndDate");
+    }
+}

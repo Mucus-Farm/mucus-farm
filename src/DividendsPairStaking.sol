@@ -3,9 +3,10 @@ pragma solidity ^0.8.13;
 
 import {IUniswapV2Factory} from "v2-core/interfaces/IUniswapV2Factory.sol";
 import {IUniswapV2Router02} from "v2-periphery/interfaces/IUniswapV2Router02.sol";
+import {IUniswapV2Pair} from "v2-core/interfaces/IUniswapV2Pair.sol";
 import {IERC20} from "openzeppelin-contracts/contracts/token/ERC20/IERC20.sol";
 import {IDividendsPairStaking} from "./interfaces/IDividendsPairStaking.sol";
-// import {console} from "forge-std/console.sol";
+import {console} from "forge-std/console.sol";
 
 contract DividendsPairStaking is IDividendsPairStaking {
     uint256 public totalDogFactionAmount;
@@ -55,34 +56,31 @@ contract DividendsPairStaking is IDividendsPairStaking {
             distributeDividend();
         }
 
-        uint256 balanceBefore = pair.balanceOf(address(this));
-        addLiquidity();
-        uint256 balanceAfter = pair.balanceOf(address(this));
-        uint256 amount = balanceAfter - balanceBefore;
+        uint256 amount = addLiquidity();
 
-        // // add staker if never staked before
-        // if (staker.totalAmount == 0) {
-        //     staker.previousDividendsPerFrog = dividendsPerFrog;
-        //     staker.previousDividendsPerDog = dividendsPerDog;
-        //     staker.lockingEndDate = block.timestamp + 2 weeks;
-        // }
-        // staker.totalAmount += amount;
+        // add staker if never staked before
+        if (staker.totalAmount == 0) {
+            staker.previousDividendsPerFrog = dividendsPerFrog;
+            staker.previousDividendsPerDog = dividendsPerDog;
+            staker.lockingEndDate = block.timestamp + 2 weeks;
+        }
+        staker.totalAmount += amount;
 
-        // if (faction == Faction.DOG) {
-        //     staker.dogFactionAmount += amount;
-        //     totalDogFactionAmount += amount;
-        // } else {
-        //     staker.frogFactionAmount += amount;
-        //     totalFrogFactionAmount += amount;
-        // }
-        // totalStakedAmount += amount;
+        if (faction == Faction.DOG) {
+            staker.dogFactionAmount += amount;
+            totalDogFactionAmount += amount;
+        } else {
+            staker.frogFactionAmount += amount;
+            totalFrogFactionAmount += amount;
+        }
+        totalStakedAmount += amount;
 
-        // stakers[msg.sender] = staker;
+        stakers[msg.sender] = staker;
 
-        // emit StakeAdded(msg.sender, amount, faction);
+        emit StakeAdded(msg.sender, amount, faction);
     }
 
-    function addLiquidity() private {
+    function addLiquidity() private returns (uint256) {
         uint256 ethAmount = msg.value >> 1;
         uint256 tokenAmount = swapEthForTokens(ethAmount);
 
@@ -90,7 +88,7 @@ contract DividendsPairStaking is IDividendsPairStaking {
         IERC20(_mucus).approve(address(router), tokenAmount);
 
         // add the liquidity
-        router.addLiquidityETH{value: ethAmount}(
+        (,, uint256 liquidity) = router.addLiquidityETH{value: ethAmount}(
             _mucus,
             tokenAmount,
             0, // slippage is unavoidable
@@ -98,6 +96,8 @@ contract DividendsPairStaking is IDividendsPairStaking {
             address(this),
             block.timestamp
         );
+
+        return liquidity;
     }
 
     function swapEthForTokens(uint256 ethAmount) private returns (uint256) {
@@ -108,8 +108,6 @@ contract DividendsPairStaking is IDividendsPairStaking {
 
         uint256[] memory amounts =
             router.swapExactETHForTokens{value: ethAmount}(0, path, address(this), block.timestamp);
-
-        // console.log("amount: ", amounts[1]);
 
         return amounts[1];
     }
