@@ -3,6 +3,7 @@ pragma solidity ^0.8.13;
 import {SafeMath} from "openzeppelin-contracts/contracts/utils/math/SafeMath.sol";
 import {Math} from "openzeppelin-contracts/contracts/utils/math/Math.sol";
 import {IUniswapV2Pair} from "v2-core/interfaces/IUniswapV2Pair.sol";
+import {IERC20} from "openzeppelin-contracts/contracts/token/ERC20/IERC20.sol";
 import "forge-std/Test.sol";
 
 library UniswapV2Library {
@@ -52,6 +53,20 @@ library UniswapV2Library {
                 (amountA, amountB) = (amountAOptimal, amountBDesired);
             }
         }
+    }
+
+    function removeLiquidityAmounts(address _pair, address tokenA, address tokenB, uint256 liquidity)
+        public
+        view
+        returns (uint256 amountA, uint256 amountB)
+    {
+        IUniswapV2Pair pair = IUniswapV2Pair(_pair);
+        uint256 balanceA = IERC20(tokenA).balanceOf(address(pair));
+        uint256 balanceB = IERC20(tokenB).balanceOf(address(pair));
+        uint256 totalSupply = pair.totalSupply();
+
+        amountA = liquidity.mul(balanceA) / totalSupply;
+        amountB = liquidity.mul(balanceB) / totalSupply;
     }
 
     function liquidityTokensMinted(

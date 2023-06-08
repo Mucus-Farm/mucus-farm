@@ -27,7 +27,7 @@ interface IDividendsPairStaking {
     event VoteSwapped(address indexed staker, uint256 amount, Faction faction);
     event DividendsPerShareUpdated(uint256 dividendsPerFrog, uint256 dividendsPerDog);
     event DividendsEarned(address indexed staker, uint256 amount);
-    event SoupCycled(Faction soupedUp);
+    event SoupCycled(uint256 indexed soupIndex, Faction soupedUp);
     event SoupCycleDurationUpdated(uint256 soupCycleDuration);
 
     function currentSoupIndex() external view returns (uint256);

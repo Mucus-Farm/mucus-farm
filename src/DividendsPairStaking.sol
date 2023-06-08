@@ -52,9 +52,9 @@ contract DividendsPairStaking is IDividendsPairStaking {
 
         // This is equivalent to taring it to 0
         // This makes it so that the math to calculate the dps stays consistent
-        // if (staker.totalAmount > 0) {
-        //     distributeDividend();
-        // }
+        if (staker.totalAmount > 0) {
+            distributeDividend(staker);
+        }
 
         uint256 amount = addLiquidity();
 
@@ -82,16 +82,10 @@ contract DividendsPairStaking is IDividendsPairStaking {
 
     function addLiquidity() private returns (uint256) {
         uint256 ethAmount = msg.value >> 1;
-        (uint256 reserve0, uint256 reserve1,) = IUniswapV2Pair(address(pair)).getReserves();
-        console.log("contract reserves before the swap: ", reserve0, reserve1);
-
         uint256 tokenAmount = swapEthForTokens(ethAmount);
 
         // approve token transfer to cover all possible scenarios
         IERC20(_mucus).approve(address(router), tokenAmount);
-
-        (uint256 reserve0After, uint256 reserve1After,) = IUniswapV2Pair(address(pair)).getReserves();
-        console.log("contract reserves after the swap: ", reserve0After, reserve1After);
 
         // add the liquidity
         (,, uint256 liquidity) = router.addLiquidityETH{value: ethAmount}(
@@ -103,10 +97,6 @@ contract DividendsPairStaking is IDividendsPairStaking {
             block.timestamp
         );
 
-        (uint256 r0, uint256 r1,) = IUniswapV2Pair(address(pair)).getReserves();
-        console.log("contract reserves after added liquidity: ", r0, r1);
-        console.log("======================");
-
         return liquidity;
     }
 
@@ -116,23 +106,16 @@ contract DividendsPairStaking is IDividendsPairStaking {
         path[0] = router.WETH();
         path[1] = address(_mucus);
 
-        // (uint256 reserve0, uint256 reserve1,) = IUniswapV2Pair(address(pair)).getReserves();
-        // console.log("contract reserves: ", reserve0, reserve1);
-        // console.log("eth amount: ", ethAmount);
-
-        console.log("msg value: ", msg.value);
         uint256[] memory amounts =
             router.swapExactETHForTokens{value: ethAmount}(0, path, address(this), block.timestamp);
-
-        console.log("contract amount: ", amounts[1]);
-        // console.log("============");
 
         return amounts[1];
     }
 
     function removeStake(uint256 amount, Faction faction) external {
         Staker memory staker = stakers[msg.sender];
-        require(amount >= staker.totalAmount, "Cannot unstake more than you have staked");
+        require(amount > 0, "Amount must be greater than 0");
+        require(staker.totalAmount >= amount, "Cannot unstake more than you have staked");
         require(
             faction != Faction.DOG || staker.dogFactionAmount >= amount,
             "Cannot unstake more than you have staked for the dog faction"
@@ -145,9 +128,7 @@ contract DividendsPairStaking is IDividendsPairStaking {
 
         // This is equivalent to taring it to 0
         // This makes it so that the math to calculate the dps stays consistent
-        if (staker.totalAmount > 0) {
-            distributeDividend();
-        }
+        distributeDividend(staker);
 
         if (faction == Faction.DOG) {
             staker.dogFactionAmount -= amount;
@@ -166,7 +147,7 @@ contract DividendsPairStaking is IDividendsPairStaking {
 
         totalStakedAmount -= amount;
 
-        pair.transferFrom(address(this), msg.sender, amount);
+        pair.approve(address(router), amount);
         (uint256 tokenAmount, uint256 ethAmount) = router.removeLiquidityETH(
             _mucus,
             amount,
@@ -183,13 +164,12 @@ contract DividendsPairStaking is IDividendsPairStaking {
     }
 
     function vote(uint256 amount, Faction faction) external {
-        require(amount > 0, "Amount must be greater than 0");
         Staker memory staker = stakers[msg.sender];
+        require(amount > 0, "Amount must be greater than 0");
+        require(staker.totalAmount > 0, "Cannot vote if you haven't staked");
 
         // reset to make it consistent
-        if (staker.totalAmount > 0) {
-            distributeDividend();
-        }
+        distributeDividend(staker);
 
         if (faction == Faction.FROG) {
             require(staker.dogFactionAmount >= amount, "Cannot swap more Dog votes than you have staked");
@@ -213,13 +193,13 @@ contract DividendsPairStaking is IDividendsPairStaking {
     }
 
     function claim() external {
-        distributeDividend();
+        Staker memory staker = stakers[msg.sender];
+        require(staker.totalAmount > 0, "Cannot claim if you haven't staked");
+        distributeDividend(staker);
     }
 
-    function distributeDividend() internal {
-        Staker memory staker = stakers[msg.sender];
-
-        require(staker.totalAmount > 0, "Cannot distribute to someone who hasn't staked");
+    function distributeDividend(Staker memory staker) internal {
+        // Staker memory staker = stakers[msg.sender];
         uint256 frogRewards = (dividendsPerFrog - staker.previousDividendsPerFrog) * staker.frogFactionAmount;
         uint256 dogRewards = (dividendsPerDog - staker.previousDividendsPerDog) * staker.dogFactionAmount;
 
@@ -248,17 +228,18 @@ contract DividendsPairStaking is IDividendsPairStaking {
 
     function cycleSoup() external onlyTokenOrOwner {
         require(
-            block.timestamp > soupCycles[currentSoupIndex].timestamp + 12 hours,
+            block.timestamp > soupCycles[currentSoupIndex].timestamp + soupCycleDuration,
             "Cannot update soup cycle until the current cycle is over"
         );
-        currentSoupIndex++;
         uint256 totalFrogWins = soupCycles[currentSoupIndex].totalFrogWins;
         Faction soupedUp = totalFrogFactionAmount > totalDogFactionAmount ? Faction.FROG : Faction.DOG;
         if (soupedUp == Faction.FROG) totalFrogWins++;
+
+        currentSoupIndex++;
         soupCycles[currentSoupIndex] =
             SoupCycle({timestamp: block.timestamp, soupedUp: soupedUp, totalFrogWins: totalFrogWins});
 
-        emit SoupCycled(soupedUp);
+        emit SoupCycled(currentSoupIndex, soupedUp);
     }
 
     function getSoup(uint256 previousSoupIndex)
@@ -289,7 +270,8 @@ contract DividendsPairStaking is IDividendsPairStaking {
     }
 
     function withdrawEth() external onlyOwner {
-        payable(msg.sender).transfer(address(this).balance);
+        (bool success,) = payable(msg.sender).call{value: address(this).balance}("");
+        require(success, "Failed to send ETH");
     }
 
     receive() external payable {}
