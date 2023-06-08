@@ -33,6 +33,8 @@ contract Initial is Test {
     // router = 0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D
     // pair = 0x8b4a31307634C995D7C6e3F5A30D0B272F56013a
     // weth = 0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2
+    // mucus = 0x522B3294E6d06aA25Ad0f1B8891242E335D3B459
+    // dps = 0x535B3D7A252fa034Ed71F0C53ec0C6F784cB64E1
 
     function setUp() public {
         vm.createSelectFork(vm.rpcUrl("mainnet"), 16183456);
@@ -41,6 +43,9 @@ contract Initial is Test {
         mucus = new Mucus(teamWallet);
         dps = new DividendsPairStaking(address(mucus));
         mucus.setDividendsPairStaking(address(dps));
+
+        console.log("mucus: ", address(mucus));
+        console.log("dps: ", address(dps));
 
         router = IUniswapV2Router02(_uniswapRouter02);
         weth = IERC20(router.WETH());
@@ -138,13 +143,21 @@ contract MucusSwapBack is Initial {
         // How much mucus and eth is getting swapped in the swapBack function
         uint256 mucusBalanceBefore = mucus.balanceOf(address(mucus));
 
-        uint256 mucusSold = swapTokensAtAmount >> 1;
+        uint256 mucusSwapped = swapTokensAtAmount >> 1;
         (uint256 mucusReserveBefore, uint256 ethReserveBefore,) = IUniswapV2Pair(pair).getReserves();
-        uint256 ethBought = UniswapV2Library.getAmountOut(mucusSold, mucusReserveBefore, ethReserveBefore);
+        uint256 ethSwapped = UniswapV2Library.getAmountOut(mucusSwapped, mucusReserveBefore, ethReserveBefore);
+
+        mucusReserveBefore = mucusReserveBefore + mucusSwapped;
+        ethReserveBefore = ethReserveBefore - ethSwapped;
 
         (uint256 mucusLiquidityAdded, uint256 ethLiquidityAdded) = UniswapV2Library.addLiquidityAmount(
-            mucusReserveBefore + mucusSold, ethReserveBefore - ethBought, mucusBalanceBefore / 6, ethBought / 3, 0, 0
+            mucusReserveBefore, ethReserveBefore, mucusBalanceBefore / 6, ethSwapped / 3, 0, 0
         );
+
+        mucusReserveBefore = mucusReserveBefore + mucusLiquidityAdded;
+        ethReserveBefore = ethReserveBefore + ethLiquidityAdded;
+
+        uint256 ethBought = UniswapV2Library.getAmountOut(amountIn * 94 / 100, mucusReserveBefore, ethReserveBefore);
 
         vm.startPrank(address(2));
         mucus.approve(address(router), amountIn);
@@ -154,13 +167,13 @@ contract MucusSwapBack is Initial {
         (uint256 mucusReserveAfter, uint256 ethReserveAfter,) = IUniswapV2Pair(pair).getReserves();
         assertEq(
             mucus.balanceOf(address(mucus)),
-            mucusBalanceBefore - mucusSold - mucusLiquidityAdded - (mucusBalanceBefore / 3) + (100 ether * 6 / 100),
+            mucusBalanceBefore - mucusSwapped - mucusLiquidityAdded - (mucusBalanceBefore / 3) + (amountIn * 6 / 100),
             "mucus balance"
         );
-        // assertEq(mucusReserveAfter, mucusReserveBefore + mucusSold + mucusLiquidityAdded, "mucus reserves");
-        // assertEq(ethReserveAfter, ethReserveBefore + ethBought + ethLiquidityAdded, "eth reserves");
+        assertEq(mucusReserveAfter, mucusReserveBefore + (amountIn * 94 / 100), "mucus reserves");
+        assertEq(ethReserveAfter, ethReserveBefore - ethBought, "eth reserves");
         assertEq(mucus.balanceOf(address(dps)), swapTokensAtAmount * 1 / 3, "dps mucus balance increased");
-        assertEq(address(teamWallet).balance, (ethBought * 2 / 3) + 1, "team wallet balance increased"); // +1 for rounding error
+        assertEq(address(teamWallet).balance, (ethSwapped * 2 / 3) + 1, "team wallet balance increased"); // +1 for rounding error
         assertEq(address(mucus).balance, 0, "mucus eth balance drained");
     }
 }
