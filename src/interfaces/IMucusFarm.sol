@@ -3,13 +3,13 @@ pragma solidity ^0.8.13;
 
 interface IMucusFarm {
     enum Faction {
-        FROG,
-        DOG
+        DOG,
+        FROG
     }
 
     struct Stake {
         address owner;
-        uint256 lockingEndtime;
+        uint256 lockingEndTime;
         uint256 previousClaimTimestamp; // for the case of a giga or a chad, needs to take either the preivousClaimTimestamp or the lastSoupCycle, whichever is bigger is what's subbed
         uint256 previousTaxPer;
         uint256 previousSoupIndex;

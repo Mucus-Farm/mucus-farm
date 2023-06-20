@@ -28,6 +28,7 @@ contract Mucus is ERC20 {
     IUniswapV2Router02 public router;
     address public pair;
     address public mucusFarm;
+    address public frogsAndDogs;
 
     constructor(address _teamWallet) ERC20("Mucus", "MUCUS") {
         router = IUniswapV2Router02(0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D);
@@ -52,11 +53,16 @@ contract Mucus is ERC20 {
         _;
     }
 
+    modifier onlyFrogsAndDogs() {
+        require(msg.sender == address(frogsAndDogs));
+        _;
+    }
+
     function mint(address to, uint256 amount) external onlyMucusFarm {
         _mint(to, amount);
     }
 
-    function burn(address account, uint256 amount) external onlyMucusFarm {
+    function burn(address account, uint256 amount) external onlyFrogsAndDogs {
         _burn(account, amount);
     }
 
@@ -152,6 +158,10 @@ contract Mucus is ERC20 {
     function setDividendsPairStaking(address _dividendsPairStaking) external onlyOwner {
         dividendsPairStaking = IDividendsPairStaking(_dividendsPairStaking);
         isFeeExempt[_dividendsPairStaking] = true;
+    }
+
+    function setFrogsAndDogs(address _frogsAndDogs) external onlyOwner {
+        frogsAndDogs = _frogsAndDogs;
     }
 
     function setIsFeeExempt(address _feeExempt) external onlyOwner {

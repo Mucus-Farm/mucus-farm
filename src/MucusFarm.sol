@@ -13,7 +13,6 @@ contract MucusFarm is IMucusFarm, IERC721Receiver, Pausable {
     uint256 public constant WINNING_POOL_TAX_RATE = 5;
     uint256 public constant LOSING_POOL_TAX_RATE = 20;
     uint256 public constant DAILY_MUCUS_RATE = 10000 * 1e18;
-    uint256 public constant STOLEN_TOKEN_ID = 9393;
     uint256 public constant MAX_MUCUS_MINTED = 6262 * 1e8 * 1e18;
     address private _DEAD = 0x000000000000000000000000000000000000dEaD;
     address private _owner;
@@ -52,11 +51,8 @@ contract MucusFarm is IMucusFarm, IERC721Receiver, Pausable {
 
         for (uint256 i; i < tokenIds.length; i++) {
             if (_msgSender() != address(frogsAndDogs)) {
-                require(
-                    frogsAndDogs.ownerOf(tokenIds[i]) == _msgSender(), "Cannot stake frogs or dogs that you don't own"
-                );
                 frogsAndDogs.transferFrom(_msgSender(), address(this), tokenIds[i]);
-            } else if (tokenIds[i] == STOLEN_TOKEN_ID) {
+            } else if (tokenIds[i] == 0) {
                 continue;
             }
 
@@ -73,9 +69,9 @@ contract MucusFarm is IMucusFarm, IERC721Receiver, Pausable {
     function addToMucusFarm(address parent, uint256 tokenId, uint256 taxPer, uint256[] storage staked) internal {
         farm[tokenId] = Stake({
             owner: parent,
-            lockingEndtime: block.timestamp + 3 days,
-            previousTaxPer: taxPer,
+            lockingEndTime: block.timestamp + 3 days,
             previousClaimTimestamp: block.timestamp,
+            previousTaxPer: taxPer,
             previousSoupIndex: dividendsPairStaking.currentSoupIndex(),
             gigaOrChadIndex: staked.length
         });
@@ -141,7 +137,7 @@ contract MucusFarm is IMucusFarm, IERC721Receiver, Pausable {
                 stake.previousSoupIndex = dividendsPairStaking.currentSoupIndex();
                 farm[tokenIds[i]] = stake;
             } else {
-                require(block.timestamp > stake.lockingEndtime, "Cannot unstake frogs or dogs that are still locked");
+                require(block.timestamp > stake.lockingEndTime, "Cannot unstake frogs or dogs that are still locked");
                 removeFromMucusFarm(tokenIds[i], stake, _isFrog(tokenIds[i]) ? gigasStaked : chadsStaked);
             }
 
@@ -268,6 +264,12 @@ contract MucusFarm is IMucusFarm, IERC721Receiver, Pausable {
 
     function randomGigaOrChad(uint256 seed, Faction faction) external view returns (address) {
         uint256 tokenId;
+        if (faction == Faction.FROG && gigasStaked.length == 0) {
+            return address(0x0);
+        } else if (faction == Faction.DOG && chadsStaked.length == 0) {
+            return address(0x0);
+        }
+
         if (faction == Faction.FROG) {
             tokenId = gigasStaked[seed % gigasStaked.length];
         } else {

@@ -3,8 +3,8 @@ pragma solidity ^0.8.13;
 
 interface IFrogsAndDogs {
     enum Faction {
-        FROG,
-        DOG
+        DOG,
+        FROG
     }
 
     struct Request {
