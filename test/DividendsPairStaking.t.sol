@@ -424,6 +424,7 @@ contract DpsVoting is Initial {
         vm.expectEmit(true, true, true, true);
         emit VoteSwapped(address(2), frogFactionAmountBefore, dog);
 
+        console.log("frog faction amount before: ", frogFactionAmountBefore);
         dps.vote(frogFactionAmountBefore, dog);
 
         // test staker state
@@ -698,7 +699,7 @@ contract DpsCycleSoup is Initial {
         vm.prank(owner);
         dps.cycleSoup();
 
-        vm.warp(block.timestamp + dps.soupCycleDuration() + 1);
+        vm.warp(block.timestamp + dps.soupCycleDuration());
         buyMucus();
 
         uint256 currentSoupIndex = dps.currentSoupIndex();
@@ -714,7 +715,7 @@ contract DpsCycleSoup is Initial {
         hoax(address(2), 1000 ether);
         dps.addStake{value: 1000 ether}(dog);
 
-        vm.warp(block.timestamp + dps.soupCycleDuration() + 1);
+        vm.warp(block.timestamp + dps.soupCycleDuration());
         buyMucus();
 
         uint256 currentSoupIndex = dps.currentSoupIndex();
@@ -734,7 +735,7 @@ contract DpsOnlyOwner is Initial {
         hoax(address(2), 1000 ether);
         dps.addStake{value: 1000 ether}(frog);
 
-        vm.warp(block.timestamp + dps.soupCycleDuration() + 1);
+        vm.warp(block.timestamp + dps.soupCycleDuration());
 
         vm.prank(address(2));
         vm.expectRevert();

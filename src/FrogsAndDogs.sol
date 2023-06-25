@@ -171,6 +171,7 @@ contract FrogsAndDogs is IFrogsAndDogs, ERC721, VRFConsumerBaseV2, Ownable, Paus
             address recipient = selectRecipient(rng, parent);
             if (!stake || recipient != parent) {
                 _safeMint(recipient, minted);
+                if (stake) tokenIds[i] = 9393;
             } else {
                 _safeMint(address(mucusFarm), minted);
                 tokenIds[i] = minted;

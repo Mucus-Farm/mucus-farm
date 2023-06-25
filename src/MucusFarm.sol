@@ -3,13 +3,13 @@ pragma solidity ^0.8.13;
 
 import {IERC721} from "openzeppelin-contracts/contracts/token/ERC721/IERC721.sol";
 import {IERC721Receiver} from "openzeppelin-contracts/contracts/token/ERC721/IERC721Receiver.sol";
-import {Pausable} from "openzeppelin-contracts/contracts/security/Pausable.sol";
+import {Context} from "openzeppelin-contracts/contracts/utils/Context.sol";
 import {IMucusFarm} from "./interfaces/IMucusFarm.sol";
 import {IMucus} from "./interfaces/IMucus.sol";
 import {IDividendsPairStaking} from "./interfaces/IDividendsPairStaking.sol";
 import {console} from "forge-std/console.sol";
 
-contract MucusFarm is IMucusFarm, IERC721Receiver, Pausable {
+contract MucusFarm is IMucusFarm, IERC721Receiver, Context {
     uint256 public constant INITIAL_GIGA_CHAD_TOKEN_ID = 6000;
     uint256 public constant WINNING_POOL_TAX_RATE = 5;
     uint256 public constant LOSING_POOL_TAX_RATE = 20;
@@ -18,6 +18,7 @@ contract MucusFarm is IMucusFarm, IERC721Receiver, Pausable {
     address private _DEAD = 0x000000000000000000000000000000000000dEaD;
     address private _owner;
     bool public rescueEnabled;
+    bool public paused;
 
     mapping(uint256 => Stake) public farm;
     uint256 public totalMucusMinted;
@@ -36,24 +37,30 @@ contract MucusFarm is IMucusFarm, IERC721Receiver, Pausable {
         frogsAndDogs = IERC721(_frogsAndDogs);
         mucus = IMucus(_mucus);
         dividendsPairStaking = IDividendsPairStaking(_dividendsPairStaking);
-        _owner = msg.sender;
+        _owner = _msgSender();
     }
 
     modifier onlyOwner() {
-        require(msg.sender == _owner);
+        require(_msgSender() == _owner);
         _;
     }
 
-    function addManyToMucusFarm(address parent, uint256[] calldata tokenIds) external {
+    modifier notPaused() {
+        require(!paused);
+        _;
+    }
+
+    function addManyToMucusFarm(address parent, uint256[] calldata tokenIds) external notPaused {
         require(
             _msgSender() == parent || _msgSender() == address(frogsAndDogs),
             "sender must be the parent or the frogs and dogs contract"
         );
 
+        // safe to use tokenId 0 since it's being minted to the team
         for (uint256 i; i < tokenIds.length; i++) {
             if (_msgSender() != address(frogsAndDogs)) {
                 frogsAndDogs.transferFrom(_msgSender(), address(this), tokenIds[i]);
-            } else if (tokenIds[i] == 0) {
+            } else if (tokenIds[i] == 9393) {
                 continue;
             }
 
@@ -105,7 +112,7 @@ contract MucusFarm is IMucusFarm, IERC721Receiver, Pausable {
     // User test case
     // Be mindful of the taxPerGiga and taxPerChad rates. Make sure to add on to it after the sheep mucus claim, else wise
     // the claimer is essentially claiming from there own stack, which may have some weird consequences
-    function claimMany(uint256[] calldata tokenIds, bool unstake) external {
+    function claimMany(uint256[] calldata tokenIds, bool unstake) external notPaused {
         // farming accounting
         uint256 totalMucusEarned;
         uint256 totalBurnableTax;
@@ -127,24 +134,10 @@ contract MucusFarm is IMucusFarm, IERC721Receiver, Pausable {
             uint256 mucusRate = tokenIds[i] >= INITIAL_GIGA_CHAD_TOKEN_ID ? DAILY_MUCUS_RATE * 3 : DAILY_MUCUS_RATE;
             totalMucusEarned += (block.timestamp - stake.previousClaimTimestamp) * mucusRate / 1 days;
             (uint256 burnableTax, uint256 claimableTax) = _getTax(tokenIds[i]);
-            console.log(
-                ">= than initial giga chad token id: ", tokenIds[i] >= INITIAL_GIGA_CHAD_TOKEN_ID, parseEther(mucusRate)
-            );
-            console.log("tokenId", tokenIds[i]);
-            console.log("burnable tax: ", parseEther(burnableTax));
-            console.log("claimabile tax: :", parseEther(claimableTax));
-            console.log(
-                "mucus earned: ",
-                parseEther(
-                    ((block.timestamp - stake.previousClaimTimestamp) * mucusRate / 1 days) - claimableTax - burnableTax
-                )
-            );
             if (_isFrog(tokenIds[i])) totalClaimableChadTax += claimableTax;
             else totalClaimableGigaTax += claimableTax;
             totalBurnableTax += burnableTax;
             totalMucusEarned -= (claimableTax + burnableTax);
-            console.log("total mucus earned: ", parseEther(totalMucusEarned));
-            console.log("============");
             if (tokenIds[i] >= INITIAL_GIGA_CHAD_TOKEN_ID) {
                 totalMucusEarned += (_isFrog(tokenIds[i]) ? taxPerGiga : taxPerChad) - stake.previousTaxPer;
             }
@@ -166,21 +159,21 @@ contract MucusFarm is IMucusFarm, IERC721Receiver, Pausable {
             unclaimedChadTax += totalClaimableChadTax;
         } else {
             taxPerChad += (totalClaimableChadTax + unclaimedChadTax) / chadsStaked.length;
-            unclaimedChadTax = 0;
+            if (unclaimedChadTax > 0) unclaimedChadTax = 0;
         }
         if (gigasStaked.length == 0) {
             unclaimedGigaTax += totalClaimableGigaTax;
         } else {
             taxPerGiga += (totalClaimableGigaTax + unclaimedGigaTax) / gigasStaked.length;
-            unclaimedGigaTax = 0;
+            if (unclaimedGigaTax > 0) unclaimedGigaTax = 0;
         }
 
         // mint mucus
         mintMucus(_msgSender(), totalMucusEarned);
         mintMucus(_DEAD, totalBurnableTax);
 
-        emit TokensFarmed(msg.sender, totalMucusEarned, tokenIds);
-        if (unstake) emit TokensUnstaked(msg.sender, tokenIds);
+        emit TokensFarmed(_msgSender(), totalMucusEarned, tokenIds);
+        if (unstake) emit TokensUnstaked(_msgSender(), tokenIds);
     }
 
     function removeFromMucusFarm(uint256 tokenId, Stake memory stake, uint256[] storage stakedTokenIds) internal {
@@ -223,7 +216,7 @@ contract MucusFarm is IMucusFarm, IERC721Receiver, Pausable {
     //                  |////////                  ///////////|
     //              Prev. Claim                           Curr. Claim
     function _getTax(uint256 tokenId) internal view returns (uint256 burnableTax, uint256 claimableTax) {
-        Stake storage stake = farm[tokenId];
+        Stake memory stake = farm[tokenId];
         uint256 mucusRate = tokenId >= INITIAL_GIGA_CHAD_TOKEN_ID ? DAILY_MUCUS_RATE * 3 : DAILY_MUCUS_RATE;
         (
             uint256 currentSoupIndex,
@@ -251,7 +244,7 @@ contract MucusFarm is IMucusFarm, IERC721Receiver, Pausable {
             }
 
             // cycles passed
-            // -1 to account for the previous leftover cycle and if the previous recorded cycle was a frog cycle
+            // -1 to account for the previous leftover cycle
             uint256 soupCyclesPassed = currentSoupIndex - stake.previousSoupIndex - 1;
             uint256 totalFrogWinsPassed =
                 currentSoupCycle.totalFrogWins - previousSoupCycle.totalFrogWins - uint256(currentSoupCycle.soupedUp); // If the current cycle is a frog cycle, don't count it
@@ -308,7 +301,7 @@ contract MucusFarm is IMucusFarm, IERC721Receiver, Pausable {
 
         for (uint256 i = 0; i < tokenIds.length; i++) {
             tokenId = tokenIds[i];
-            require(farm[tokenId].owner == _msgSender(), "Cannot rescue tokens that you don't own");
+            require(farm[tokenId].owner == _msgSender(), "Cannot rescue frogs or dogs that you didn't stake");
             removeFromMucusFarm(tokenId, farm[tokenId], _isFrog(tokenId) ? gigasStaked : chadsStaked);
         }
     }
@@ -328,8 +321,7 @@ contract MucusFarm is IMucusFarm, IERC721Receiver, Pausable {
     }
 
     function setPaused(bool _paused) external onlyOwner {
-        if (_paused) _pause();
-        else _unpause();
+        paused = _paused;
     }
 
     function onERC721Received(address, address from, uint256, bytes calldata) external pure override returns (bytes4) {

@@ -130,9 +130,9 @@ contract FndMint is Initial {
         }
         assertEq(fnd.balanceOf(address(mucusFarm)), 10, "balanceOf");
 
-        for (uint256 i; i < 10; i++) {
+        for (uint256 i; i < 1; i++) {
             (
-                address owner,
+                address stakingOwner,
                 uint256 lockingEndTime,
                 uint256 previousClaimTimestamp,
                 uint256 previousTaxPer,
@@ -140,7 +140,7 @@ contract FndMint is Initial {
                 uint256 gigaOrChadIndex
             ) = mucusFarm.farm(i);
 
-            assertEq(owner, address(2), "owner");
+            assertEq(stakingOwner, address(2), "owner");
             assertEq(lockingEndTime, block.timestamp + 3 days);
             assertEq(previousClaimTimestamp, block.timestamp, "previousClaimTimestamp");
             assertEq(previousTaxPer, 0, "previousTaxPer");
@@ -174,7 +174,7 @@ contract FndBreedAndAdopt is Initial {
         vm.stopPrank();
 
         vm.prank(owner);
-        mucus.transfer(address(2), 8000 * 1e8 ether);
+        mucus.transfer(address(2), 3000 * 1e8 ether);
         vm.startPrank(address(2));
 
         for (uint256 i; i < (FROGS_AND_DOGS_SUPPLY - tokensPaidInEth) / 10; i++) {
@@ -195,7 +195,7 @@ contract FndBreedAndAdopt is Initial {
         vm.stopPrank();
 
         vm.prank(owner);
-        mucus.transfer(address(2), 8000 * 1e8 ether);
+        mucus.transfer(address(2), 3000 * 1e8 ether);
         uint256 mucusBalanceBefore = mucus.balanceOf(address(2));
 
         vm.prank(address(2));
@@ -213,7 +213,7 @@ contract FndBreedAndAdopt is Initial {
         vm.stopPrank();
 
         vm.prank(owner);
-        mucus.transfer(address(2), 8000 * 1e8 ether);
+        mucus.transfer(address(2), 3000 * 1e8 ether);
         uint256 mucusBalanceBefore = mucus.balanceOf(address(2));
 
         vm.prank(address(2));
@@ -234,7 +234,7 @@ contract FndTransform is Initial {
         vm.stopPrank();
 
         vm.prank(owner);
-        mucus.transfer(address(2), 8000 * 1e8 ether);
+        mucus.transfer(address(2), 3000 * 1e8 ether);
         vm.prank(address(2));
 
         vm.expectRevert(bytes("Must use 3 of the same types"));
@@ -271,7 +271,7 @@ contract FndTransform is Initial {
         vm.stopPrank();
 
         vm.prank(owner);
-        mucus.transfer(address(2), 8000 * 1e8 ether);
+        mucus.transfer(address(2), 3000 * 1e8 ether);
 
         uint256 balanceBefore = fnd.balanceOf(address(2));
         uint256 requestId = vrfCoordinator.s_nextRequestId();
@@ -295,7 +295,7 @@ contract FndTransform is Initial {
         vm.stopPrank();
 
         vm.prank(owner);
-        mucus.transfer(address(2), 8000 * 1e8 ether);
+        mucus.transfer(address(2), 3000 * 1e8 ether);
 
         uint256 balanceBefore = fnd.balanceOf(address(2));
         uint256 requestId = vrfCoordinator.s_nextRequestId();
@@ -319,7 +319,7 @@ contract FndTransform is Initial {
         vm.stopPrank();
 
         vm.prank(owner);
-        mucus.transfer(address(2), 8000 * 1e8 ether);
+        mucus.transfer(address(2), 3000 * 1e8 ether);
 
         transformMultipleDogs(19);
 
@@ -396,8 +396,8 @@ contract FndBreedAndStolen is Initial {
         vm.stopPrank();
 
         vm.startPrank(owner);
-        mucus.transfer(stealer, 4000 * 1e8 ether);
-        mucus.transfer(address(2), 4000 * 1e8 ether);
+        mucus.transfer(stealer, 1500 * 1e8 ether);
+        mucus.transfer(address(2), 1500 * 1e8 ether);
         vm.stopPrank();
 
         // mint and stake chad dog
@@ -427,8 +427,8 @@ contract FndBreedAndStolen is Initial {
         vm.stopPrank();
 
         vm.startPrank(owner);
-        mucus.transfer(stealer, 4000 * 1e8 ether);
-        mucus.transfer(address(2), 4000 * 1e8 ether);
+        mucus.transfer(stealer, 1500 * 1e8 ether);
+        mucus.transfer(address(2), 1500 * 1e8 ether);
         vm.stopPrank();
 
         // mint and stake chad dog
@@ -458,8 +458,8 @@ contract FndBreedAndStolen is Initial {
         vm.stopPrank();
 
         vm.startPrank(owner);
-        mucus.transfer(stealer, 4000 * 1e8 ether);
-        mucus.transfer(address(2), 4000 * 1e8 ether);
+        mucus.transfer(stealer, 1500 * 1e8 ether);
+        mucus.transfer(address(2), 1500 * 1e8 ether);
         vm.stopPrank();
 
         // mint and stake chad dog

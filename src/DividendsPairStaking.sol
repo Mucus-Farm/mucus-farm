@@ -228,7 +228,7 @@ contract DividendsPairStaking is IDividendsPairStaking {
 
     function cycleSoup() external onlyTokenOrOwner {
         require(
-            block.timestamp > soupCycles[currentSoupIndex].timestamp + soupCycleDuration,
+            block.timestamp >= soupCycles[currentSoupIndex].timestamp + soupCycleDuration,
             "Cannot update soup cycle until the current cycle is over"
         );
         uint256 totalFrogWins = soupCycles[currentSoupIndex].totalFrogWins;

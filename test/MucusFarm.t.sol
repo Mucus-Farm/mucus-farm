@@ -3,6 +3,7 @@ pragma solidity ^0.8.16;
 import "forge-std/Test.sol";
 import {Mucus} from "../src/Mucus.sol";
 import {DividendsPairStaking} from "../src/DividendsPairStaking.sol";
+import {IDividendsPairStaking} from "../src/interfaces/IDividendsPairStaking.sol";
 import {FrogsAndDogs} from "../src/FrogsAndDogs.sol";
 import {IFrogsAndDogs} from "../src/interfaces/IFrogsAndDogs.sol";
 import {MucusFarm} from "../src/MucusFarm.sol";
@@ -21,7 +22,9 @@ contract Initial is Test {
     uint256 public constant LOSING_POOL_TAX_RATE = 20;
     uint256 public constant DAILY_MUCUS_RATE = 10000 * 1e18;
     uint256 public constant MAX_MUCUS_MINTED = 6262 * 1e8 * 1e18;
-    address public _DEAD = 0x000000000000000000000000000000000000dEaD;
+    address public constant _DEAD = 0x000000000000000000000000000000000000dEaD;
+    uint256 public constant ethAmount = 100000000000 ether;
+    uint256 public constant tokenAmount = 100000000000 ether;
 
     uint256 public tokensPaidInEth = 2000; // 1/3 of the supply
 
@@ -52,7 +55,6 @@ contract Initial is Test {
         uint64 _subscriptionId = vrfCoordinator.createSubscription();
         vrfCoordinator.fundSubscription(_subscriptionId, 1000 ether);
 
-        address _uniswapRouter02 = 0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D;
         mucus = new Mucus(teamWallet);
         dps = new DividendsPairStaking(address(mucus));
         fnd = new FrogsAndDogs(_subscriptionId, "", "", address(vrfCoordinator), address(mucus), address(dps));
@@ -66,6 +68,24 @@ contract Initial is Test {
 
         vrfCoordinator.addConsumer(_subscriptionId, address(fnd));
 
+        vm.stopPrank();
+    }
+
+    function addLiquidity() public {
+        vm.startPrank(owner);
+        deal(owner, ethAmount);
+        // approve token transfer to cover all possible scenarios
+        mucus.approve(address(router), tokenAmount);
+
+        // add the liquidity
+        router.addLiquidityETH{value: ethAmount}(
+            address(mucus),
+            tokenAmount,
+            0, // slippage is unavoidable
+            0, // slippage is unavoidable
+            address(this),
+            block.timestamp
+        );
         vm.stopPrank();
     }
 
@@ -206,7 +226,7 @@ contract MucusFarmAddManyToFarm is Initial {
         mintEthSale();
 
         vm.prank(owner);
-        mucus.transfer(address(2), 8000 * 1e8 * 1e18);
+        mucus.transfer(address(2), 3000 * 1e8 ether);
 
         transformMultipleDogs(100);
         transformMultipleFrogs(100);
@@ -309,6 +329,20 @@ contract MucusFarmStakeAndUnstake is Initial {
         mucusFarm.claimMany(tokenIds, true);
 
         for (uint256 i; i < 10; i++) {
+            (
+                address stakeOwner,
+                uint256 lockingEndTime,
+                uint256 previousClaimTimestamp,
+                uint256 previousTaxPer,
+                uint256 previousSoupIndex,
+                uint256 gigaOrChadIndex
+            ) = mucusFarm.farm(i);
+            assertEq(stakeOwner, address(0), "stake owner");
+            assertEq(lockingEndTime, 0, "lockingEndTime");
+            assertEq(previousClaimTimestamp, 0, "previousClaimTimestamp");
+            assertEq(previousTaxPer, 0, "previousTaxPer");
+            assertEq(previousSoupIndex, 0, "previousSoupIndex");
+            assertEq(gigaOrChadIndex, 0, "gigaOrChadIndex");
             assertEq(fnd.ownerOf(i), address(2), "unstake fnd");
         }
     }
@@ -501,7 +535,10 @@ contract MucusFarmGcEarnings is Initial {
         transformMultipleDogs(100);
         transformMultipleFrogs(100);
 
-        console.log("mucus balance: ", parseEther(mucus.balanceOf(address(2))));
+        vm.startPrank(address(2));
+        fnd.transferFrom(address(2), address(3), 101);
+        fnd.transferFrom(address(2), address(3), 102);
+        vm.stopPrank();
     }
 
     function test_stakeThenClaim() public {
@@ -509,16 +546,10 @@ contract MucusFarmGcEarnings is Initial {
         tokenIds[0] = 6000;
         tokenIds[1] = 6001;
 
-        uint256 previousTimestamp = block.timestamp;
-
         vm.startPrank(address(2));
         mucusFarm.addManyToMucusFarm(address(2), tokenIds);
-        vm.warp(previousTimestamp + 1 days);
+        vm.warp(block.timestamp + 1 days);
         mucusFarm.claimMany(tokenIds, false);
-
-        console.log("daily mucus farmed: ", parseEther(dailyMucusFarmed));
-        console.log("daily claimed tax: ", parseEther(dailyClaimedTax));
-        console.log("daily burned tax: ", parseEther(dailyBurnedTax));
 
         assertEq(mucus.balanceOf(address(2)), dailyMucusFarmed - dailyClaimedTax - dailyBurnedTax, "balance of user");
         assertEq(mucusFarm.taxPerChad(), 0, "taxPerChad");
@@ -526,6 +557,497 @@ contract MucusFarmGcEarnings is Initial {
         assertEq(mucusFarm.unclaimedChadTax(), 0, "unclaimedChadTax");
         assertEq(mucusFarm.unclaimedGigaTax(), 0, "unclaimedGigaTax");
     }
+
+    function test_fndStakeThenClaimThenGcStakeThenClaim() public {
+        (, uint256 fndClaimedTax,) = fndStakeThenClaim();
+
+        assertEq(mucusFarm.unclaimedGigaTax(), fndClaimedTax, "giga unclaimedTax");
+        assertEq(mucusFarm.unclaimedChadTax(), 0, "chad unclaimedTax");
+        assertEq(mucusFarm.taxPerGiga(), 0, "taxPerGiga prior");
+        assertEq(mucusFarm.taxPerChad(), 0, "taxPerChad prior");
+
+        uint256[] memory tokenIds = new uint256[](2);
+        tokenIds[0] = 6000;
+        tokenIds[1] = 6001;
+
+        vm.startPrank(address(2));
+        mucusFarm.addManyToMucusFarm(address(2), tokenIds);
+        vm.warp(block.timestamp + 1 days);
+        mucusFarm.claimMany(tokenIds, false);
+
+        assertEq(mucus.balanceOf(address(2)), (dailyMucusFarmed - dailyClaimedTax - dailyBurnedTax), "balance of user");
+        assertEq(mucusFarm.taxPerChad(), 0, "taxPerChad");
+        assertEq(mucusFarm.taxPerGiga(), dailyClaimedTax + fndClaimedTax, "taxPerGiga");
+        assertEq(mucusFarm.unclaimedChadTax(), 0, "unclaimedChadTax");
+        assertEq(mucusFarm.unclaimedGigaTax(), 0, "unclaimedGigaTax");
+    }
+
+    function test_fndStakeThenClaimThenGcStakeFndStakeClaimThenClaim() public {
+        (, uint256 fndClaimedTax,) = fndStakeThenClaim();
+
+        uint256[] memory tokenIds = new uint256[](2);
+        tokenIds[0] = 6000;
+        tokenIds[1] = 6001;
+
+        vm.prank(address(2));
+        mucusFarm.addManyToMucusFarm(address(2), tokenIds);
+        fndClaim();
+        vm.warp(block.timestamp + 1 days);
+        vm.prank(address(2));
+        mucusFarm.claimMany(tokenIds, false);
+
+        assertEq(
+            mucus.balanceOf(address(2)),
+            dailyMucusFarmed - dailyClaimedTax - dailyBurnedTax + fndClaimedTax,
+            "balance of user"
+        );
+        assertEq(mucusFarm.taxPerChad(), 0, "taxPerChad");
+        assertEq(mucusFarm.taxPerGiga(), dailyClaimedTax + fndClaimedTax, "taxPerGiga");
+        assertEq(mucusFarm.unclaimedChadTax(), 0, "unclaimedChadTax");
+        assertEq(mucusFarm.unclaimedGigaTax(), 0, "unclaimedGigaTax");
+    }
+
+    function test_GcStakeThenFndStakeClaimThenClaim() public {
+        uint256[] memory tokenIds = new uint256[](2);
+        tokenIds[0] = 6000;
+        tokenIds[1] = 6001;
+
+        vm.prank(address(2));
+        mucusFarm.addManyToMucusFarm(address(2), tokenIds);
+
+        (, uint256 fndClaimedTax,) = fndStakeThenClaim();
+        assertEq(mucusFarm.taxPerChad(), 0, "taxPerChad");
+        assertEq(mucusFarm.taxPerGiga(), fndClaimedTax, "taxPerGiga");
+        assertEq(mucusFarm.unclaimedChadTax(), 0, "unclaimedChadTax");
+        assertEq(mucusFarm.unclaimedGigaTax(), 0, "unclaimedGigaTax");
+
+        vm.prank(address(2));
+        mucusFarm.claimMany(tokenIds, false);
+
+        assertEq(
+            mucus.balanceOf(address(2)),
+            dailyMucusFarmed - dailyClaimedTax - dailyBurnedTax + fndClaimedTax,
+            "balance of user"
+        );
+        assertEq(mucusFarm.taxPerChad(), 0, "taxPerChad");
+        assertEq(mucusFarm.taxPerGiga(), fndClaimedTax + dailyClaimedTax, "taxPerGiga");
+        assertEq(mucusFarm.unclaimedChadTax(), 0, "unclaimedChadTax");
+        assertEq(mucusFarm.unclaimedGigaTax(), 0, "unclaimedGigaTax");
+    }
+
+    function fndStakeThenClaim() public returns (uint256, uint256, uint256) {
+        vm.startPrank(address(3));
+        uint256[] memory tokenIds = new uint256[](2);
+        tokenIds[0] = 101;
+        tokenIds[1] = 102;
+
+        uint256 fndMucusFarmed = DAILY_MUCUS_RATE * 2;
+        uint256 fndClaimedTax = DAILY_MUCUS_RATE * 20 / 100;
+        uint256 fndBurnedTax = DAILY_MUCUS_RATE * 5 / 100;
+
+        mucusFarm.addManyToMucusFarm(address(3), tokenIds);
+        vm.warp(block.timestamp + 1 days);
+        mucusFarm.claimMany(tokenIds, false);
+        vm.stopPrank();
+
+        return (fndMucusFarmed, fndClaimedTax, fndBurnedTax);
+    }
+
+    function fndClaim() public returns (uint256, uint256, uint256) {
+        vm.startPrank(address(3));
+        uint256[] memory tokenIds = new uint256[](2);
+        tokenIds[0] = 101;
+        tokenIds[1] = 102;
+
+        uint256 fndMucusFarmed = DAILY_MUCUS_RATE * 2;
+        uint256 fndClaimedTax = DAILY_MUCUS_RATE * 20 / 100;
+        uint256 fndBurnedTax = DAILY_MUCUS_RATE * 5 / 100;
+
+        mucusFarm.claimMany(tokenIds, false);
+        vm.stopPrank();
+
+        return (fndMucusFarmed, fndClaimedTax, fndBurnedTax);
+    }
 }
 
-// test for this in gc earnings
+contract MucusFarmSoupCycleEarnings is Initial {
+    // grabbed this number from DpsVoting test contract
+    uint256 totalVotes = 498499999999999999999;
+    uint256 public dailyMucusFarmed = DAILY_MUCUS_RATE;
+    uint256 public dailyClaimedTax = DAILY_MUCUS_RATE * 20 / 100;
+    uint256 public dailyBurnedTax = DAILY_MUCUS_RATE * 5 / 100;
+
+    function setUp() public override {
+        super.setUp();
+
+        address _uniswapRouter02 = 0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D;
+        router = IUniswapV2Router02(_uniswapRouter02);
+
+        addLiquidity();
+
+        mintEthSale();
+
+        hoax(owner, 1000 ether);
+        dps.addStake{value: 1000 ether}(IDividendsPairStaking.Faction.FROG);
+    }
+
+    function test_3cyclePassFFDFDClaimFrog() public {
+        // stake in the middle of a cycle
+        uint256 previousSoupCycleTimestamp = block.timestamp;
+        vm.warp(block.timestamp + 2 days);
+        uint256 stakeTimestamp = block.timestamp;
+
+        stakeFrog();
+        vm.warp(block.timestamp + 1 days);
+        vm.prank(owner);
+        dps.cycleSoup();
+
+        // 3 cycle pass of FDF
+        cycleDogWin();
+        cycleFrogWin();
+        cycleDogWin();
+
+        uint256 currentSoupCycleTimestamp = block.timestamp;
+
+        // claim in the middle of a cycle
+        vm.warp(block.timestamp + 1 days);
+        claimFrog();
+
+        // assert earnings
+        uint256 previousLeftoverEarnings =
+            dailyMucusFarmed * (previousSoupCycleTimestamp + dps.soupCycleDuration() - stakeTimestamp) / 1 days;
+        uint256 previousLeftoverBurnedTax =
+            dailyBurnedTax * (previousSoupCycleTimestamp + dps.soupCycleDuration() - stakeTimestamp) / 1 days;
+        uint256 previousProfit = previousLeftoverEarnings - previousLeftoverBurnedTax;
+
+        // * 3 since one cycle is 3 days
+        uint256 cycleEarnings = dailyMucusFarmed * 3 * 3;
+        uint256 cycleClaimedTax = dailyClaimedTax * 3;
+        uint256 cycleBurnTax = dailyBurnedTax * 3 * 2;
+        uint256 cycleProfit = cycleEarnings - cycleClaimedTax - cycleBurnTax;
+
+        uint256 currentLeftoverEarnings = dailyMucusFarmed * (block.timestamp - currentSoupCycleTimestamp) / 1 days;
+        uint256 currentLeftoverClaimedTax = dailyClaimedTax * (block.timestamp - currentSoupCycleTimestamp) / 1 days;
+        uint256 currentProfit = currentLeftoverEarnings - currentLeftoverClaimedTax;
+
+        assertEq(mucus.balanceOf(address(2)), previousProfit + cycleProfit + currentProfit, "user balance");
+        assertEq(mucus.balanceOf(_DEAD), previousLeftoverBurnedTax + cycleBurnTax, "burned tax");
+        assertEq(mucusFarm.unclaimedChadTax(), cycleClaimedTax + currentLeftoverClaimedTax, "unclaimed chad tax");
+        assertEq(mucusFarm.unclaimedGigaTax(), 0, "unclaimed giga tax");
+        assertEq(mucusFarm.taxPerChad(), 0, "tax per chad");
+        assertEq(mucusFarm.taxPerGiga(), 0, "tax per giga");
+    }
+
+    function test_3cyclePassFFDFDClaimDog() public {
+        // stake in the middle of a cycle
+        uint256 previousSoupCycleTimestamp = block.timestamp;
+        vm.warp(block.timestamp + 2 days);
+        uint256 stakeTimestamp = block.timestamp;
+
+        stakeDog();
+        vm.warp(block.timestamp + 1 days);
+        vm.prank(owner);
+        dps.cycleSoup();
+
+        // 3 cycle pass of FDF
+        cycleDogWin();
+        cycleFrogWin();
+        cycleDogWin();
+
+        uint256 currentSoupCycleTimestamp = block.timestamp;
+
+        // claim in the middle of a cycle
+        vm.warp(block.timestamp + 1 days);
+        claimDog();
+
+        // assert earnings
+        uint256 previousLeftoverEarnings =
+            dailyMucusFarmed * (previousSoupCycleTimestamp + dps.soupCycleDuration() - stakeTimestamp) / 1 days;
+        uint256 previousLeftoverClaimedTax =
+            dailyClaimedTax * (previousSoupCycleTimestamp + dps.soupCycleDuration() - stakeTimestamp) / 1 days;
+        uint256 previousProfit = previousLeftoverEarnings - previousLeftoverClaimedTax;
+
+        // * 3 since one cycle is 3 days
+        uint256 cycleEarnings = dailyMucusFarmed * 3 * 3;
+        uint256 cycleClaimedTax = dailyClaimedTax * 3 * 2;
+        uint256 cycleBurnTax = dailyBurnedTax * 3;
+        uint256 cycleProfit = cycleEarnings - cycleClaimedTax - cycleBurnTax;
+
+        uint256 currentLeftoverEarnings = dailyMucusFarmed * (block.timestamp - currentSoupCycleTimestamp) / 1 days;
+        uint256 currentLeftoverBurnTax = dailyBurnedTax * (block.timestamp - currentSoupCycleTimestamp) / 1 days;
+        uint256 currentProfit = currentLeftoverEarnings - currentLeftoverBurnTax;
+
+        assertEq(mucus.balanceOf(address(2)), previousProfit + cycleProfit + currentProfit, "user balance");
+        assertEq(mucus.balanceOf(_DEAD), dailyBurnedTax + cycleBurnTax, "burned tax");
+        assertEq(mucusFarm.unclaimedChadTax(), 0, "unclaimed chad tax");
+        assertEq(mucusFarm.unclaimedGigaTax(), cycleClaimedTax + previousLeftoverClaimedTax, "unclaimed chad tax");
+        assertEq(mucusFarm.taxPerChad(), 0, "tax per chad");
+        assertEq(mucusFarm.taxPerGiga(), 0, "tax per giga");
+    }
+
+    function test_FFClaimFrog() public {
+        // stake in the middle of a cycle
+        uint256 previousSoupCycleTimestamp = block.timestamp;
+        vm.warp(block.timestamp + 2 days);
+        uint256 stakeTimestamp = block.timestamp;
+
+        stakeFrog();
+        vm.warp(block.timestamp + 1 days);
+        vm.prank(owner);
+        dps.cycleSoup();
+
+        uint256 currentSoupCycleTimestamp = block.timestamp;
+
+        // claim in the middle of a cycle
+        vm.warp(block.timestamp + 1 days);
+        claimFrog();
+
+        // assert earnings
+        uint256 previousLeftoverEarnings =
+            dailyMucusFarmed * (previousSoupCycleTimestamp + dps.soupCycleDuration() - stakeTimestamp) / 1 days;
+        uint256 previousLeftoverBurnedTax =
+            dailyBurnedTax * (previousSoupCycleTimestamp + dps.soupCycleDuration() - stakeTimestamp) / 1 days;
+        uint256 previousProfit = previousLeftoverEarnings - previousLeftoverBurnedTax;
+
+        uint256 currentLeftoverEarnings = dailyMucusFarmed * (block.timestamp - currentSoupCycleTimestamp) / 1 days;
+        uint256 currentLeftoverBurnedTax = dailyBurnedTax * (block.timestamp - currentSoupCycleTimestamp) / 1 days;
+        uint256 currentProfit = currentLeftoverEarnings - currentLeftoverBurnedTax;
+
+        assertEq(mucus.balanceOf(address(2)), previousProfit + currentProfit, "user balance");
+        assertEq(mucus.balanceOf(_DEAD), previousLeftoverBurnedTax + currentLeftoverBurnedTax, "burned tax");
+        assertEq(mucusFarm.unclaimedChadTax(), 0, "unclaimed chad tax");
+        assertEq(mucusFarm.unclaimedGigaTax(), 0, "unclaimed chad tax");
+        assertEq(mucusFarm.taxPerChad(), 0, "tax per chad");
+        assertEq(mucusFarm.taxPerGiga(), 0, "tax per giga");
+    }
+
+    function test_FFClaimDog() public {
+        // stake in the middle of a cycle
+        uint256 previousSoupCycleTimestamp = block.timestamp;
+        vm.warp(block.timestamp + 2 days);
+        uint256 stakeTimestamp = block.timestamp;
+
+        stakeDog();
+        vm.warp(block.timestamp + 1 days);
+        vm.prank(owner);
+        dps.cycleSoup();
+
+        uint256 currentSoupCycleTimestamp = block.timestamp;
+
+        // claim in the middle of a cycle
+        vm.warp(block.timestamp + 1 days);
+        claimDog();
+
+        // assert earnings
+        uint256 previousLeftoverEarnings =
+            dailyMucusFarmed * (previousSoupCycleTimestamp + dps.soupCycleDuration() - stakeTimestamp) / 1 days;
+        uint256 previousLeftoverClaimedTax =
+            dailyClaimedTax * (previousSoupCycleTimestamp + dps.soupCycleDuration() - stakeTimestamp) / 1 days;
+        uint256 previousProfit = previousLeftoverEarnings - previousLeftoverClaimedTax;
+
+        uint256 currentLeftoverEarnings = dailyMucusFarmed * (block.timestamp - currentSoupCycleTimestamp) / 1 days;
+        uint256 currentLeftoverClaimedTax = dailyClaimedTax * (block.timestamp - currentSoupCycleTimestamp) / 1 days;
+        uint256 currentProfit = currentLeftoverEarnings - currentLeftoverClaimedTax;
+
+        assertEq(mucus.balanceOf(address(2)), previousProfit + currentProfit, "user balance");
+        assertEq(mucus.balanceOf(_DEAD), 0, "burned tax");
+        assertEq(mucusFarm.unclaimedChadTax(), 0, "unclaimed chad tax");
+        assertEq(
+            mucusFarm.unclaimedGigaTax(), previousLeftoverClaimedTax + currentLeftoverClaimedTax, "unclaimed chad tax"
+        );
+        assertEq(mucusFarm.taxPerChad(), 0, "tax per chad");
+        assertEq(mucusFarm.taxPerGiga(), 0, "tax per giga");
+    }
+
+    function test_FDClaimFrog() public {
+        // stake in the middle of a cycle
+        uint256 previousSoupCycleTimestamp = block.timestamp;
+        vm.warp(block.timestamp + 2 days);
+        uint256 stakeTimestamp = block.timestamp;
+
+        stakeFrog();
+        vm.warp(block.timestamp + 1 days);
+        vm.prank(owner);
+        dps.vote(totalVotes, IDividendsPairStaking.Faction.DOG);
+        vm.prank(owner);
+        dps.cycleSoup();
+
+        uint256 currentSoupCycleTimestamp = block.timestamp;
+
+        // claim in the middle of a cycle
+        vm.warp(block.timestamp + 1 days);
+        claimFrog();
+
+        // assert earnings
+        uint256 previousLeftoverEarnings =
+            dailyMucusFarmed * (previousSoupCycleTimestamp + dps.soupCycleDuration() - stakeTimestamp) / 1 days;
+        uint256 previousLeftoverBurnedTax =
+            dailyBurnedTax * (previousSoupCycleTimestamp + dps.soupCycleDuration() - stakeTimestamp) / 1 days;
+        uint256 previousProfit = previousLeftoverEarnings - previousLeftoverBurnedTax;
+
+        uint256 currentLeftoverEarnings = dailyMucusFarmed * (block.timestamp - currentSoupCycleTimestamp) / 1 days;
+        uint256 currentLeftoverClaimedTax = dailyClaimedTax * (block.timestamp - currentSoupCycleTimestamp) / 1 days;
+        uint256 currentProfit = currentLeftoverEarnings - currentLeftoverClaimedTax;
+
+        assertEq(mucus.balanceOf(address(2)), previousProfit + currentProfit, "user balance");
+        assertEq(mucus.balanceOf(_DEAD), previousLeftoverBurnedTax, "burned tax");
+        assertEq(mucusFarm.unclaimedChadTax(), currentLeftoverClaimedTax, "unclaimed chad tax");
+        assertEq(mucusFarm.unclaimedGigaTax(), 0, "unclaimed chad tax");
+        assertEq(mucusFarm.taxPerChad(), 0, "tax per chad");
+        assertEq(mucusFarm.taxPerGiga(), 0, "tax per giga");
+    }
+
+    function test_FDClaimDog() public {
+        // stake in the middle of a cycle
+        uint256 previousSoupCycleTimestamp = block.timestamp;
+        vm.warp(block.timestamp + 2 days);
+        uint256 stakeTimestamp = block.timestamp;
+
+        stakeDog();
+        vm.warp(block.timestamp + 1 days);
+        vm.prank(owner);
+        dps.vote(totalVotes, IDividendsPairStaking.Faction.DOG);
+        vm.prank(owner);
+        dps.cycleSoup();
+
+        uint256 currentSoupCycleTimestamp = block.timestamp;
+
+        // claim in the middle of a cycle
+        vm.warp(block.timestamp + 1 days);
+        claimDog();
+
+        // assert earnings
+        uint256 previousLeftoverEarnings =
+            dailyMucusFarmed * (previousSoupCycleTimestamp + dps.soupCycleDuration() - stakeTimestamp) / 1 days;
+        uint256 previousLeftoverClaimedTax =
+            dailyClaimedTax * (previousSoupCycleTimestamp + dps.soupCycleDuration() - stakeTimestamp) / 1 days;
+        uint256 previousProfit = previousLeftoverEarnings - previousLeftoverClaimedTax;
+
+        uint256 currentLeftoverEarnings = dailyMucusFarmed * (block.timestamp - currentSoupCycleTimestamp) / 1 days;
+        uint256 currentLeftoverBurnedTax = dailyBurnedTax * (block.timestamp - currentSoupCycleTimestamp) / 1 days;
+        uint256 currentProfit = currentLeftoverEarnings - currentLeftoverBurnedTax;
+
+        assertEq(mucus.balanceOf(address(2)), previousProfit + currentProfit, "user balance");
+        assertEq(mucus.balanceOf(_DEAD), currentLeftoverBurnedTax, "burned tax");
+        assertEq(mucusFarm.unclaimedChadTax(), 0, "unclaimed chad tax");
+        assertEq(mucusFarm.unclaimedGigaTax(), previousLeftoverClaimedTax, "unclaimed chad tax");
+        assertEq(mucusFarm.taxPerChad(), 0, "tax per chad");
+        assertEq(mucusFarm.taxPerGiga(), 0, "tax per giga");
+    }
+
+    // uint256 i = dps.currentSoupIndex();
+    // (uint256 timestamp, IDividendsPairStaking.Faction soupedUp, uint256 totalFrogWins) = dps.soupCycles(i);
+
+    function stakeDog() public {
+        uint256[] memory tokenIds = new uint256[](1);
+        tokenIds[0] = 0;
+
+        vm.prank(address(2));
+        mucusFarm.addManyToMucusFarm(address(2), tokenIds);
+    }
+
+    function claimDog() public {
+        uint256[] memory tokenIds = new uint256[](1);
+        tokenIds[0] = 0;
+
+        vm.prank(address(2));
+        mucusFarm.claimMany(tokenIds, false);
+    }
+
+    function stakeFrog() public {
+        uint256[] memory tokenIds = new uint256[](1);
+        tokenIds[0] = 1;
+
+        vm.prank(address(2));
+        mucusFarm.addManyToMucusFarm(address(2), tokenIds);
+    }
+
+    function claimFrog() public {
+        uint256[] memory tokenIds = new uint256[](1);
+        tokenIds[0] = 1;
+
+        vm.prank(address(2));
+        mucusFarm.claimMany(tokenIds, false);
+    }
+
+    function cycleFrogWin() public {
+        vm.startPrank(owner);
+        vm.warp(block.timestamp + dps.soupCycleDuration());
+        dps.vote(totalVotes, IDividendsPairStaking.Faction.FROG);
+        dps.cycleSoup();
+        vm.stopPrank();
+    }
+
+    function cycleDogWin() public {
+        vm.startPrank(owner);
+        vm.warp(block.timestamp + dps.soupCycleDuration());
+        dps.vote(totalVotes, IDividendsPairStaking.Faction.DOG);
+        dps.cycleSoup();
+        vm.stopPrank();
+    }
+}
+
+contract MucusFarmRescue is Initial {
+    function setUp() public override {
+        super.setUp();
+        mintEthSale();
+    }
+
+    function test_revertsRescue() public {
+        uint256[] memory tokenIds = new uint256[](10);
+        for (uint256 i; i < 10; i++) {
+            tokenIds[i] = i;
+        }
+
+        vm.prank(address(2));
+        mucusFarm.addManyToMucusFarm(address(2), tokenIds);
+
+        vm.prank(address(2));
+        vm.expectRevert(bytes("Rescue mode not enabled"));
+        mucusFarm.rescue(tokenIds);
+
+        vm.prank(owner);
+        mucusFarm.setRescueEnabled(true);
+        vm.expectRevert(bytes("Cannot rescue frogs or dogs that you didn't stake"));
+        mucusFarm.rescue(tokenIds);
+    }
+
+    function test_rescue() public {
+        uint256[] memory tokenIds = new uint256[](10);
+        for (uint256 i; i < 10; i++) {
+            tokenIds[i] = i;
+        }
+
+        vm.prank(address(2));
+        mucusFarm.addManyToMucusFarm(address(2), tokenIds);
+
+        for (uint256 i; i < 10; i++) {
+            assertEq(fnd.ownerOf(i), address(mucusFarm));
+        }
+
+        vm.prank(owner);
+        mucusFarm.setRescueEnabled(true);
+        vm.prank(address(2));
+        mucusFarm.rescue(tokenIds);
+        for (uint256 i; i < 10; i++) {
+            assertEq(fnd.ownerOf(i), address(2));
+        }
+    }
+}
+
+contract MucusFarmOnlyOwner is Initial {
+    event Paused(address account);
+    event Unpaused(address account);
+
+    function test_setResuceEnabled() public {
+        vm.prank(owner);
+        mucusFarm.setRescueEnabled(true);
+        assertEq(mucusFarm.rescueEnabled(), true);
+    }
+
+    function test_setPausedTrue() public {
+        vm.prank(owner);
+        mucusFarm.setPaused(true);
+        assertEq(mucusFarm.paused(), true);
+    }
+}
