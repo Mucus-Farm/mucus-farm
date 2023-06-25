@@ -13,12 +13,12 @@ interface IMucusFarm {
         uint256 previousClaimTimestamp; // for the case of a giga or a chad, needs to take either the preivousClaimTimestamp or the lastSoupCycle, whichever is bigger is what's subbed
         uint256 previousTaxPer;
         uint256 previousSoupIndex;
-        uint256 gigaOrChadIndex;
+        uint256 gigaChadIndex;
     }
 
-    event TokenStaked(address indexed parent, uint256 tokenId);
-    event TokenUnstaked(address indexed parent, uint256 tokenId);
-    event TokenFarmed(uint256 indexed tokenId, uint256 mucusFarmed);
+    event TokensStaked(address indexed parent, uint256[] tokenIds);
+    event TokensUnstaked(address indexed parent, uint256[] tokenIds);
+    event TokensFarmed(address indexed parent, uint256 mucusFarmed, uint256[] tokenIds);
     event MucusEarned(address indexed to, uint256 amount);
 
     function addManyToMucusFarm(address parent, uint256[] memory tokenIds) external;

@@ -17,7 +17,8 @@ contract Mucus is ERC20 {
     uint16 public denominator = 100;
     bool private swapping;
     bool public swapEnabled = true;
-    uint256 private tokenSupply = 9393 * 1e8 * 1e18;
+    uint256 private MAX_SUPPLY = 9393 * 1e8 * 1e18;
+    uint256 private INITIAL_MINT_SUPPLY = 3131 * 1e8 * 1e18;
     uint256 public swapTokensAtAmount = 278787 * 1e18;
 
     mapping(address => bool) private isFeeExempt;
@@ -40,7 +41,8 @@ contract Mucus is ERC20 {
 
         _owner = msg.sender;
         teamWallet = _teamWallet;
-        _mint(msg.sender, tokenSupply);
+
+        _mint(msg.sender, INITIAL_MINT_SUPPLY);
     }
 
     modifier onlyOwner() {
@@ -59,6 +61,7 @@ contract Mucus is ERC20 {
     }
 
     function mint(address to, uint256 amount) external onlyMucusFarm {
+        require(totalSupply() + amount < MAX_SUPPLY, "total supply exceeded");
         _mint(to, amount);
     }
 
@@ -150,14 +153,14 @@ contract Mucus is ERC20 {
         );
     }
 
-    function setMucusFarm(address _mucusFarm) external onlyOwner {
-        mucusFarm = _mucusFarm;
-        isFeeExempt[_mucusFarm] = true;
-    }
-
     function setDividendsPairStaking(address _dividendsPairStaking) external onlyOwner {
         dividendsPairStaking = IDividendsPairStaking(_dividendsPairStaking);
         isFeeExempt[_dividendsPairStaking] = true;
+    }
+
+    function setMucusFarm(address _mucusFarm) external onlyOwner {
+        mucusFarm = _mucusFarm;
+        isFeeExempt[_mucusFarm] = true;
     }
 
     function setFrogsAndDogs(address _frogsAndDogs) external onlyOwner {
