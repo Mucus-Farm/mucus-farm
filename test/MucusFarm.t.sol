@@ -57,7 +57,8 @@ contract Initial is Test {
 
         mucus = new Mucus(teamWallet);
         dps = new DividendsPairStaking(address(mucus));
-        fnd = new FrogsAndDogs(_subscriptionId, "", "", address(vrfCoordinator), address(mucus), address(dps));
+        fnd =
+        new FrogsAndDogs(ETH_MINT_PRICE, keccak256(abi.encode(address(0))), _subscriptionId, "", "", address(vrfCoordinator), address(mucus), address(dps));
         mucusFarm = new MucusFarm(address(fnd), address(mucus), address(dps));
 
         mucus.setDividendsPairStaking(address(dps));
@@ -65,6 +66,7 @@ contract Initial is Test {
         mucus.setFrogsAndDogs(address(fnd));
 
         fnd.setMucusFarm(address(mucusFarm));
+        fnd.setPublicMintedStarted();
 
         vrfCoordinator.addConsumer(_subscriptionId, address(fnd));
 

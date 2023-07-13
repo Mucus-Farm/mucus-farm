@@ -5,6 +5,7 @@ import {console} from "forge-std/console.sol";
 import {ERC721} from "openzeppelin-contracts/contracts/token/ERC721/ERC721.sol";
 import {Ownable} from "openzeppelin-contracts/contracts/access/Ownable.sol";
 import {Pausable} from "openzeppelin-contracts/contracts/security/Pausable.sol";
+import {MerkleProof} from "openzeppelin-contracts/contracts/utils/cryptography/MerkleProof.sol";
 import {VRFCoordinatorV2Interface} from "chainlink/contracts/src/v0.8/interfaces/VRFCoordinatorV2Interface.sol";
 import {VRFConsumerBaseV2} from "chainlink/contracts/src/v0.8/vrf/VRFConsumerBaseV2.sol";
 import {IFrogsAndDogs} from "./interfaces/IFrogsAndDogs.sol";
@@ -13,9 +14,10 @@ import {IMucus} from "./interfaces/IMucus.sol";
 import {IDividendsPairStaking} from "./interfaces/IDividendsPairStaking.sol";
 
 contract FrogsAndDogs is IFrogsAndDogs, ERC721, VRFConsumerBaseV2, Ownable, Pausable {
-    uint256 public constant ETH_MINT_PRICE = 0.03131 ether;
     uint256 public constant MUCUS_MINT_PRICE = 6262 ether;
     uint256 public constant SUMMON_PRICE = 9393 ether;
+    uint256 public immutable ETH_MINT_PRICE;
+    bytes32 public immutable WHITELIST_MERKLE_ROOT;
 
     uint256 public constant FROGS_AND_DOGS_SUPPLY = 6000;
     uint256 public constant GIGAS_MAX_SUPPLY = 7001;
@@ -25,9 +27,13 @@ contract FrogsAndDogs is IFrogsAndDogs, ERC721, VRFConsumerBaseV2, Ownable, Paus
     uint256 public gigasMinted = 6001;
     uint256 public chadsMinted = 6000;
 
+    uint256 public whitelistMintSupply = 1000;
     uint256 public tokensPaidInEth = 2000; // 1/3 of the supply
     string public baseURI; // setup endpoint that grabs the images and denies access to images for tokenIds that aren't minted yet
     string public contractURI; // setup endpoint that grabs the images and denies access to images for tokenIds that aren't minted yet
+
+    bool public publicMintStarted;
+    mapping(address => uint256) public whitelistMinted;
 
     // see https://docs.chain.link/docs/vrf/v2/subscription/supported-networks/#configurations
     bytes32 public immutable keyHash = 0x474e34a077df58807dbe9c96d3c009b23b3c6d0cce433e59bbf5b34f823bc56c;
@@ -52,6 +58,8 @@ contract FrogsAndDogs is IFrogsAndDogs, ERC721, VRFConsumerBaseV2, Ownable, Paus
     IMucus public mucus;
 
     constructor(
+        uint256 _ETH_MINT_PRICE,
+        bytes32 _WHITELIST_MERKLE_ROOT,
         uint64 _subscriptionId,
         string memory _initialBaseURI,
         string memory _initialContractURI,
@@ -59,6 +67,8 @@ contract FrogsAndDogs is IFrogsAndDogs, ERC721, VRFConsumerBaseV2, Ownable, Paus
         address _mucus,
         address _dividendsPerStaking
     ) ERC721("Frogs and Dogs", "FND") VRFConsumerBaseV2(_vrfCoordinator) {
+        ETH_MINT_PRICE = _ETH_MINT_PRICE;
+        WHITELIST_MERKLE_ROOT = _WHITELIST_MERKLE_ROOT;
         vrfCoordinator = VRFCoordinatorV2Interface(_vrfCoordinator);
         mucus = IMucus(_mucus);
         dividendsPairStaking = IDividendsPairStaking(_dividendsPerStaking);
@@ -67,10 +77,30 @@ contract FrogsAndDogs is IFrogsAndDogs, ERC721, VRFConsumerBaseV2, Ownable, Paus
         contractURI = _initialContractURI;
     }
 
+    function whitelistMint(uint256 amount, bool stake, bytes32[] calldata proof) external whenNotPaused {
+        require(!publicMintStarted, "Public minting has already started");
+        require(
+            MerkleProof.verifyCalldata(proof, WHITELIST_MERKLE_ROOT, keccak256(abi.encodePacked(_msgSender()))),
+            "Invalid proof"
+        );
+        require(amount > 0 && amount <= 10, "Invalid mint amount");
+        require(minted + amount < whitelistMintSupply, "All whitelist tokens have been minted");
+        require(whitelistMinted[_msgSender()] + amount <= 10, "Cannot mint more than 10 whitelist tokens");
+
+        _mint(amount, stake);
+        whitelistMinted[_msgSender()] += amount;
+    }
+
     function mint(uint256 amount, bool stake) external payable whenNotPaused {
+        require(publicMintStarted, "Public minting has not started yet");
         require(amount > 0 && amount <= 10, "Invalid mint amount");
         require(minted + amount <= tokensPaidInEth, "All Dogs and Frogs for sale have been minted");
         require(amount * ETH_MINT_PRICE == msg.value, "Invalid payment amount");
+
+        _mint(amount, stake);
+    }
+
+    function _mint(uint256 amount, bool stake) internal {
         uint256[] memory tokenIds = stake ? new uint256[](amount) : new uint256[](0);
 
         for (uint256 i = 0; i < amount; i++) {
@@ -254,7 +284,11 @@ contract FrogsAndDogs is IFrogsAndDogs, ERC721, VRFConsumerBaseV2, Ownable, Paus
         else _unpause();
     }
 
-    function setBaseURI(string memory uri) public onlyOwner {
+    function setPublicMintedStarted() external onlyOwner {
+        publicMintStarted = true;
+    }
+
+    function setBaseURI(string memory uri) external onlyOwner {
         baseURI = uri;
     }
 

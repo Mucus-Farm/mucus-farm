@@ -7,7 +7,6 @@ import {IUniswapV2Factory} from "v2-core/interfaces/IUniswapV2Factory.sol";
 import {IUniswapV2Router02} from "v2-periphery/interfaces/IUniswapV2Router02.sol";
 import {IUniswapV2Pair} from "v2-core/interfaces/IUniswapV2Pair.sol";
 import {IDividendsPairStaking} from "./interfaces/IDividendsPairStaking.sol";
-import {console} from "forge-std/console.sol";
 
 contract Mucus is ERC20 {
     uint16 public teamFee = 2;

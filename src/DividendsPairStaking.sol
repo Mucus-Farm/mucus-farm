@@ -6,7 +6,6 @@ import {IUniswapV2Router02} from "v2-periphery/interfaces/IUniswapV2Router02.sol
 import {IUniswapV2Pair} from "v2-core/interfaces/IUniswapV2Pair.sol";
 import {IERC20} from "openzeppelin-contracts/contracts/token/ERC20/IERC20.sol";
 import {IDividendsPairStaking} from "./interfaces/IDividendsPairStaking.sol";
-import {console} from "forge-std/console.sol";
 
 contract DividendsPairStaking is IDividendsPairStaking {
     uint256 public totalDogFactionAmount;

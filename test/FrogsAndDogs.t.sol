@@ -8,6 +8,7 @@ import {IFrogsAndDogs} from "../src/interfaces/IFrogsAndDogs.sol";
 import {MucusFarm} from "../src/MucusFarm.sol";
 import {VRFCoordinatorV2Mock} from "./mocks/VRFCoordinatorV2Mock.sol";
 import {IERC20} from "openzeppelin-contracts/contracts/token/ERC20/IERC20.sol";
+import {Merkle} from "murky/Merkle.sol";
 
 // uniswap
 import {IUniswapV2Factory} from "v2-core/interfaces/IUniswapV2Factory.sol";
@@ -28,6 +29,7 @@ contract Initial is Test {
     DividendsPairStaking public dps;
     FrogsAndDogs public fnd;
     MucusFarm public mucusFarm;
+    Merkle public m;
 
     IUniswapV2Router02 public router;
     IUniswapV2Pair public pair;
@@ -39,8 +41,9 @@ contract Initial is Test {
 
     address public teamWallet = address(123);
     address public owner = address(1);
+    bytes32[] public data;
 
-    function setUp() public {
+    function setUp() public virtual {
         vm.createSelectFork(vm.rpcUrl("mainnet"), 16183456);
         vm.startPrank(owner);
 
@@ -56,7 +59,16 @@ contract Initial is Test {
         dps = new DividendsPairStaking(address(mucus));
         mucus.setDividendsPairStaking(address(dps));
 
-        fnd = new FrogsAndDogs(_subscriptionId, "", "", address(vrfCoordinator), address(mucus), address(dps));
+        m = new Merkle();
+        data = new bytes32[](4);
+        data[0] = keccak256(abi.encodePacked(address(0)));
+        data[1] = keccak256(abi.encodePacked(address(1)));
+        data[2] = keccak256(abi.encodePacked(address(2)));
+        data[3] = keccak256(abi.encodePacked(address(3)));
+        bytes32 root = m.getRoot(data);
+
+        fnd =
+        new FrogsAndDogs(ETH_MINT_PRICE, root, _subscriptionId, "", "", address(vrfCoordinator), address(mucus), address(dps));
         mucusFarm = new MucusFarm(address(fnd), address(mucus), address(dps));
         fnd.setMucusFarm(address(mucusFarm));
 
@@ -75,9 +87,60 @@ contract Initial is Test {
     }
 }
 
+contract FndWhitelistMint is Initial {
+    event Transfer(address indexed from, address indexed to, uint256 indexed tokenId);
+    event TokenStaked(address indexed parent, uint256 tokenId);
+
+    function testRevertsWhitelistMint() public {
+        vm.startPrank(address(2));
+
+        bytes32[] memory proof = m.getProof(data, 2);
+        bytes32[] memory invalidProof = m.getProof(data, 0);
+
+        // error cases
+        vm.expectRevert(bytes("Invalid proof"));
+        fnd.whitelistMint(0, false, invalidProof);
+
+        vm.expectRevert(bytes("Invalid mint amount"));
+        fnd.whitelistMint(0, false, proof);
+
+        vm.expectRevert(bytes("Invalid mint amount"));
+        fnd.whitelistMint(11, false, proof);
+
+        fnd.whitelistMint(10, false, proof);
+        vm.expectRevert(bytes("Cannot mint more than 10 whitelist tokens"));
+        fnd.whitelistMint(1, false, proof);
+
+        vm.stopPrank();
+    }
+
+    function testMintWithoutStaking() public {
+        vm.startPrank(address(2));
+
+        bytes32[] memory proof = m.getProof(data, 2);
+
+        vm.expectEmit(true, true, true, true);
+        for (uint256 i; i < 10; i++) {
+            emit Transfer(address(0), address(2), i);
+        }
+        fnd.whitelistMint(10, false, proof);
+
+        for (uint256 i; i < 10; i++) {
+            assertEq(fnd.ownerOf(i), address(2));
+        }
+        assertEq(fnd.balanceOf(address(2)), 10);
+    }
+}
+
 contract FndMint is Initial {
     event Transfer(address indexed from, address indexed to, uint256 indexed tokenId);
     event TokenStaked(address indexed parent, uint256 tokenId);
+
+    function setUp() public override {
+        super.setUp();
+        vm.startPrank(address(owner));
+        fnd.setPublicMintedStarted();
+    }
 
     function testRevertsMint() public {
         vm.startPrank(address(2));
@@ -153,6 +216,12 @@ contract FndMint is Initial {
 }
 
 contract FndBreedAndAdopt is Initial {
+    function setUp() public override {
+        super.setUp();
+        vm.startPrank(address(owner));
+        fnd.setPublicMintedStarted();
+    }
+
     function test_revertsBreedAndAdopt() public {
         vm.startPrank(address(2));
         vm.deal(address(2), 10000 ether);
@@ -227,6 +296,12 @@ contract FndBreedAndAdopt is Initial {
 }
 
 contract FndTransform is Initial {
+    function setUp() public override {
+        super.setUp();
+        vm.startPrank(address(owner));
+        fnd.setPublicMintedStarted();
+    }
+
     function test_revertsTransform() public {
         vm.startPrank(address(2));
         deal(address(2), 10000 ether);
@@ -388,6 +463,12 @@ contract FndTransform is Initial {
 
 contract FndBreedAndStolen is Initial {
     address public stealer = address(3);
+
+    function setUp() public override {
+        super.setUp();
+        vm.startPrank(address(owner));
+        fnd.setPublicMintedStarted();
+    }
 
     function test_breedStakeAndNotStolenSinceNoSouped() public {
         vm.startPrank(stealer);
