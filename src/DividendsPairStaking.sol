@@ -46,7 +46,7 @@ contract DividendsPairStaking is IDividendsPairStaking {
         _;
     }
 
-    function addStake(Faction faction) external payable {
+    function addStake(Faction faction, uint256 tokenAmountOutMin) external payable {
         require(msg.value > 0, "ETH must be sent to stake");
         Staker memory staker = stakers[msg.sender];
 
@@ -56,7 +56,7 @@ contract DividendsPairStaking is IDividendsPairStaking {
             distributeDividend(staker);
         }
 
-        uint256 amount = addLiquidity();
+        uint256 amount = addLiquidity(tokenAmountOutMin);
 
         // add staker if never staked before
         if (staker.totalAmount == 0) {
@@ -80,9 +80,9 @@ contract DividendsPairStaking is IDividendsPairStaking {
         emit StakeAdded(msg.sender, amount, faction);
     }
 
-    function addLiquidity() private returns (uint256) {
+    function addLiquidity(uint256 tokenAmountOutMin) private returns (uint256) {
         uint256 ethAmount = msg.value >> 1;
-        uint256 tokenAmount = swapEthForTokens(ethAmount);
+        uint256 tokenAmount = swapEthForTokens(ethAmount, tokenAmountOutMin);
 
         // approve token transfer to cover all possible scenarios
         IERC20(_mucus).approve(address(router), tokenAmount);
@@ -100,14 +100,14 @@ contract DividendsPairStaking is IDividendsPairStaking {
         return liquidity;
     }
 
-    function swapEthForTokens(uint256 ethAmount) private returns (uint256) {
+    function swapEthForTokens(uint256 ethAmount, uint256 tokenAmountOutMin) private returns (uint256) {
         // generate the uniswap pair path of token -> weth
         address[] memory path = new address[](2);
         path[0] = router.WETH();
         path[1] = address(_mucus);
 
         uint256[] memory amounts =
-            router.swapExactETHForTokens{value: ethAmount}(0, path, address(this), block.timestamp);
+            router.swapExactETHForTokens{value: ethAmount}(tokenAmountOutMin, path, address(this), block.timestamp);
 
         return amounts[1];
     }

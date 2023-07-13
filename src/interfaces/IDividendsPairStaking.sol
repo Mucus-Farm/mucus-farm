@@ -31,7 +31,7 @@ interface IDividendsPairStaking {
     event SoupCycleDurationUpdated(uint256 soupCycleDuration);
 
     function currentSoupIndex() external view returns (uint256);
-    function addStake(Faction faction) external payable;
+    function addStake(Faction faction, uint256 tokenAmountOutMin) external payable;
     function removeStake(uint256 amount, Faction faction) external;
     function vote(uint256 amount, Faction faction) external;
     function claim() external;

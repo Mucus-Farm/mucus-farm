@@ -121,7 +121,7 @@ contract DpsStaking is Initial {
 
         emit StakeAdded(address(2), liquidity, frog);
 
-        dps.addStake{value: ethToStake}(frog);
+        dps.addStake{value: ethToStake}(frog, 0);
         (
             uint256 totalAmount,
             uint256 frogFactionAmount,
@@ -155,7 +155,7 @@ contract DpsStaking is Initial {
         vm.startPrank(address(2));
 
         deal(address(2), 2000 ether);
-        dps.addStake{value: 1000 ether}(frog);
+        dps.addStake{value: 1000 ether}(frog, 0);
 
         uint256 initialLiquidity = pair.balanceOf(address(dps));
         (uint256 mucusReserve, uint256 ethReserve,) = pair.getReserves();
@@ -175,7 +175,7 @@ contract DpsStaking is Initial {
         vm.expectEmit(true, true, true, true);
         emit StakeAdded(address(2), addedLiquidity, dog);
 
-        dps.addStake{value: 1000 ether}(dog);
+        dps.addStake{value: 1000 ether}(dog, 0);
 
         (
             uint256 totalAmount,
@@ -208,7 +208,7 @@ contract DpsStaking is Initial {
         vm.startPrank(address(2));
 
         deal(address(2), 1000 ether);
-        dps.addStake{value: 1000 ether}(frog);
+        dps.addStake{value: 1000 ether}(frog, 0);
 
         // error cases
         (uint256 initialTotalAmount, uint256 initialFrogFactionAmount, uint256 initialDogFactionAmount,,,) =
@@ -292,7 +292,7 @@ contract DpsStaking is Initial {
         vm.startPrank(address(2));
 
         deal(address(2), 1000 ether);
-        dps.addStake{value: 1000 ether}(frog);
+        dps.addStake{value: 1000 ether}(frog, 0);
 
         (uint256 liquidity,,,,,) = dps.stakers(address(2));
 
@@ -354,6 +354,51 @@ contract DpsStaking is Initial {
             assertEq(dps.totalStakedAmount(), 0, "dps total staked amount");
         }
     }
+
+    function testRevertSlippage() public {
+        vm.startPrank(address(2));
+
+        deal(address(2), 1000 ether);
+        uint256 ethToStake = 1000 ether;
+
+        uint256 ethAmount = ethToStake >> 1;
+        (uint256 mucusReserve, uint256 ethReserve,) = pair.getReserves();
+        uint256 mucusAmount = UniswapV2Library.getAmountOut(ethAmount, ethReserve, mucusReserve);
+
+        vm.expectRevert(bytes("UniswapV2Router: INSUFFICIENT_OUTPUT_AMOUNT"));
+        dps.addStake{value: ethToStake}(frog, mucusAmount + 1);
+    }
+
+    function testSlippageAccepted() public {
+        vm.startPrank(address(2));
+
+        deal(address(2), 1000 ether);
+        uint256 ethToStake = 1000 ether;
+
+        uint256 ethAmount = ethToStake >> 1;
+        (uint256 mucusReserve, uint256 ethReserve,) = pair.getReserves();
+        uint256 mucusAmount = UniswapV2Library.getAmountOut(ethAmount, ethReserve, mucusReserve);
+
+        uint256 mucusReserveAfterSwap = mucusReserve - mucusAmount;
+        uint256 ethReserveAfterSwap = ethReserve + ethAmount;
+
+        uint256 liquidity = UniswapV2Library.liquidityTokensMinted(
+            address(pair), mucusReserveAfterSwap, ethReserveAfterSwap, mucusAmount, ethAmount
+        );
+
+        vm.expectEmit(true, true, true, true);
+
+        emit StakeAdded(address(2), liquidity, frog);
+
+        dps.addStake{value: ethToStake}(frog, mucusAmount);
+        (uint256 totalAmount,,,,,) = dps.stakers(address(2));
+
+        vm.stopPrank();
+
+        // dps assertions
+        assertEq(pair.balanceOf(address(dps)), liquidity, "balance of dps");
+        assertEq(totalAmount, liquidity, "totalAmount");
+    }
 }
 
 contract DpsVoting is Initial {
@@ -366,7 +411,7 @@ contract DpsVoting is Initial {
         vm.expectRevert(bytes("Cannot vote if you haven't staked"));
         dps.vote(1, dog);
 
-        dps.addStake{value: 1000 ether}(frog);
+        dps.addStake{value: 1000 ether}(frog, 0);
 
         (, uint256 frogFactionAmountBefore, uint256 dogFactionAmountBefore,,,) = dps.stakers(address(2));
         uint256 totalFrogFactionAmountBefore = dps.totalFrogFactionAmount();
@@ -408,7 +453,7 @@ contract DpsVoting is Initial {
         vm.expectRevert(bytes("Cannot vote if you haven't staked"));
         dps.vote(1, dog);
 
-        dps.addStake{value: 1000 ether}(frog);
+        dps.addStake{value: 1000 ether}(frog, 0);
 
         (, uint256 frogFactionAmountBefore, uint256 dogFactionAmountBefore,,,) = dps.stakers(address(2));
 
@@ -450,8 +495,8 @@ contract DpsDistributeDividends is Initial {
 
     function triggerSwapBack() public {
         hoax(owner, 2000 ether);
-        dps.addStake{value: 1000 ether}(IDividendsPairStaking.Faction.FROG);
-        dps.addStake{value: 1000 ether}(IDividendsPairStaking.Faction.DOG);
+        dps.addStake{value: 1000 ether}(IDividendsPairStaking.Faction.FROG, 0);
+        dps.addStake{value: 1000 ether}(IDividendsPairStaking.Faction.DOG, 0);
 
         vm.prank(owner);
         uint256 bal = 100 ether;
@@ -473,8 +518,8 @@ contract DpsDistributeDividends is Initial {
 
     function testDeposit() public {
         hoax(owner, 2000 ether);
-        dps.addStake{value: 1000 ether}(IDividendsPairStaking.Faction.FROG);
-        dps.addStake{value: 1000 ether}(IDividendsPairStaking.Faction.DOG);
+        dps.addStake{value: 1000 ether}(IDividendsPairStaking.Faction.FROG, 0);
+        dps.addStake{value: 1000 ether}(IDividendsPairStaking.Faction.DOG, 0);
 
         vm.prank(owner);
         uint256 bal = 1000 ether;
@@ -512,7 +557,7 @@ contract DpsDistributeDividends is Initial {
 
     function testRewardsOnAddingStake() public {
         hoax(address(2), 2000 ether);
-        dps.addStake{value: 1000 ether}(frog);
+        dps.addStake{value: 1000 ether}(frog, 0);
 
         triggerSwapBack();
 
@@ -532,7 +577,7 @@ contract DpsDistributeDividends is Initial {
         emit DividendsEarned(address(2), totalRewards);
 
         vm.prank(address(2));
-        dps.addStake{value: 1000 ether}(frog);
+        dps.addStake{value: 1000 ether}(frog, 0);
 
         (,,, uint256 previousFrogDpsAfter, uint256 previousDogDpsAfter,) = dps.stakers(address(2));
 
@@ -543,7 +588,7 @@ contract DpsDistributeDividends is Initial {
 
     function testRewardsOnPartiallyRemovingStake() public {
         hoax(address(2), 2000 ether);
-        dps.addStake{value: 1000 ether}(frog);
+        dps.addStake{value: 1000 ether}(frog, 0);
 
         triggerSwapBack();
 
@@ -578,7 +623,7 @@ contract DpsDistributeDividends is Initial {
 
     function testRewardsOnFullyRemovingStake() public {
         hoax(address(2), 2000 ether);
-        dps.addStake{value: 1000 ether}(frog);
+        dps.addStake{value: 1000 ether}(frog, 0);
 
         triggerSwapBack();
 
@@ -612,7 +657,7 @@ contract DpsDistributeDividends is Initial {
 
     function testRewardsOnVote() public {
         hoax(address(2), 2000 ether);
-        dps.addStake{value: 1000 ether}(frog);
+        dps.addStake{value: 1000 ether}(frog, 0);
 
         triggerSwapBack();
 
@@ -647,7 +692,7 @@ contract DpsDistributeDividends is Initial {
         dps.claim();
 
         hoax(address(2), 1000 ether);
-        dps.addStake{value: 1000 ether}(frog);
+        dps.addStake{value: 1000 ether}(frog, 0);
 
         triggerSwapBack();
 
@@ -690,7 +735,7 @@ contract DpsCycleSoup is Initial {
 
     function testCycleFrogWin() public {
         hoax(address(2), 1000 ether);
-        dps.addStake{value: 1000 ether}(frog);
+        dps.addStake{value: 1000 ether}(frog, 0);
 
         vm.expectCall(address(dps), abi.encodeCall(IDividendsPairStaking.cycleSoup, ()), 2);
         buyMucus();
@@ -713,7 +758,7 @@ contract DpsCycleSoup is Initial {
 
     function testCycleDogWin() public {
         hoax(address(2), 1000 ether);
-        dps.addStake{value: 1000 ether}(dog);
+        dps.addStake{value: 1000 ether}(dog, 0);
 
         vm.warp(block.timestamp + dps.soupCycleDuration());
         buyMucus();
@@ -733,7 +778,7 @@ contract DpsOnlyOwner is Initial {
 
     function testCycleSoup() public {
         hoax(address(2), 1000 ether);
-        dps.addStake{value: 1000 ether}(frog);
+        dps.addStake{value: 1000 ether}(frog, 0);
 
         vm.warp(block.timestamp + dps.soupCycleDuration());
 

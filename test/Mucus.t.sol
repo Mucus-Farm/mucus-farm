@@ -125,8 +125,8 @@ contract MucusSwaps is Initial {
 contract MucusSwapBack is Initial {
     function testSwapBack() public {
         hoax(owner, 2000 ether);
-        dps.addStake{value: 1000 ether}(IDividendsPairStaking.Faction.FROG);
-        dps.addStake{value: 1000 ether}(IDividendsPairStaking.Faction.DOG);
+        dps.addStake{value: 1000 ether}(IDividendsPairStaking.Faction.FROG, 0);
+        dps.addStake{value: 1000 ether}(IDividendsPairStaking.Faction.DOG, 0);
 
         vm.prank(owner);
         uint256 bal = 1000 ether;

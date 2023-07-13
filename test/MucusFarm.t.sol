@@ -688,7 +688,7 @@ contract MucusFarmSoupCycleEarnings is Initial {
         mintEthSale();
 
         hoax(owner, 1000 ether);
-        dps.addStake{value: 1000 ether}(IDividendsPairStaking.Faction.FROG);
+        dps.addStake{value: 1000 ether}(IDividendsPairStaking.Faction.FROG, 0);
     }
 
     function test_3cyclePassFFDFDClaimFrog() public {
