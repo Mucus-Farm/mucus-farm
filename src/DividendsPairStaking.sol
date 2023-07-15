@@ -16,7 +16,6 @@ contract DividendsPairStaking is IDividendsPairStaking {
     uint256 public totalStakedAmount;
 
     mapping(uint256 => SoupCycle) public soupCycles;
-    // TODO: should there be a flag to determine if its time to start soupuing?
     uint256 public currentSoupIndex;
     uint256 public soupCycleDuration = 3 days;
 
@@ -52,10 +51,10 @@ contract DividendsPairStaking is IDividendsPairStaking {
         // This is equivalent to taring it to 0
         // This makes it so that the math to calculate the dps stays consistent
         if (staker.totalAmount > 0) {
-            distributeDividend(staker);
+            _distributeDividend(staker);
         }
 
-        uint256 amount = addLiquidity(tokenAmountOutMin);
+        uint256 amount = _addLiquidity(tokenAmountOutMin);
 
         // add staker if never staked before
         if (staker.totalAmount == 0) {
@@ -79,9 +78,9 @@ contract DividendsPairStaking is IDividendsPairStaking {
         emit StakeAdded(msg.sender, amount, faction);
     }
 
-    function addLiquidity(uint256 tokenAmountOutMin) private returns (uint256) {
+    function _addLiquidity(uint256 tokenAmountOutMin) private returns (uint256) {
         uint256 ethAmount = msg.value >> 1;
-        uint256 tokenAmount = swapEthForTokens(ethAmount, tokenAmountOutMin);
+        uint256 tokenAmount = _swapEthForTokens(ethAmount, tokenAmountOutMin);
 
         // approve token transfer to cover all possible scenarios
         IERC20(_mucus).approve(address(router), tokenAmount);
@@ -99,7 +98,7 @@ contract DividendsPairStaking is IDividendsPairStaking {
         return liquidity;
     }
 
-    function swapEthForTokens(uint256 ethAmount, uint256 tokenAmountOutMin) private returns (uint256) {
+    function _swapEthForTokens(uint256 ethAmount, uint256 tokenAmountOutMin) private returns (uint256) {
         // generate the uniswap pair path of token -> weth
         address[] memory path = new address[](2);
         path[0] = router.WETH();
@@ -127,7 +126,7 @@ contract DividendsPairStaking is IDividendsPairStaking {
 
         // This is equivalent to taring it to 0
         // This makes it so that the math to calculate the dps stays consistent
-        distributeDividend(staker);
+        _distributeDividend(staker);
 
         if (faction == Faction.DOG) {
             staker.dogFactionAmount -= amount;
@@ -168,7 +167,7 @@ contract DividendsPairStaking is IDividendsPairStaking {
         require(staker.totalAmount > 0, "Cannot vote if you haven't staked");
 
         // reset to make it consistent
-        distributeDividend(staker);
+        _distributeDividend(staker);
 
         if (faction == Faction.FROG) {
             require(staker.dogFactionAmount >= amount, "Cannot swap more Dog votes than you have staked");
@@ -194,10 +193,10 @@ contract DividendsPairStaking is IDividendsPairStaking {
     function claim() external {
         Staker memory staker = stakers[msg.sender];
         require(staker.totalAmount > 0, "Cannot claim if you haven't staked");
-        distributeDividend(staker);
+        _distributeDividend(staker);
     }
 
-    function distributeDividend(Staker memory staker) internal {
+    function _distributeDividend(Staker memory staker) internal {
         // Staker memory staker = stakers[msg.sender];
         uint256 frogRewards = (dividendsPerFrog - staker.previousDividendsPerFrog) * staker.frogFactionAmount;
         uint256 dogRewards = (dividendsPerDog - staker.previousDividendsPerDog) * staker.dogFactionAmount;

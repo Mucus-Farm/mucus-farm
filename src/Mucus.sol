@@ -14,11 +14,12 @@ contract Mucus is ERC20 {
     uint16 public liquidityFee = 2;
     uint16 public totalFee = teamFee + stakerFee + liquidityFee;
     uint16 public denominator = 100;
-    bool private swapping;
+    bool private _swapping;
     bool public swapEnabled = true;
-    uint256 private MAX_SUPPLY = 9393 * 1e8 * 1e18;
-    uint256 private INITIAL_MINT_SUPPLY = 3131 * 1e8 * 1e18;
-    uint256 public swapTokensAtAmount = 278787 * 1e18;
+
+    uint256 public constant MAX_SUPPLY = 9393 * 1e8 * 1e18;
+    uint256 public constant INITIAL_MINT_SUPPLY = 3131 * 1e8 * 1e18;
+    uint256 public constant SWAP_TOKENS_AT_AMOUNT = 278787 * 1e18;
 
     mapping(address => bool) private isFeeExempt;
     address private teamWallet;
@@ -70,21 +71,21 @@ contract Mucus is ERC20 {
 
     function _transfer(address from, address to, uint256 amount) internal override {
         uint256 contractTokenBalance = balanceOf(address(this));
-        bool canSwap = contractTokenBalance >= swapTokensAtAmount;
+        bool canSwap = contractTokenBalance >= SWAP_TOKENS_AT_AMOUNT;
 
-        if (canSwap && !swapping && from != address(pair)) {
-            swapping = true;
-            swapBack();
-            swapping = false;
+        if (canSwap && !_swapping && from != address(pair)) {
+            _swapping = true;
+            _swapBack();
+            _swapping = false;
         }
 
-        if (!swapping && block.timestamp >= dividendsPairStaking.nextSoupCycle()) {
+        if (!_swapping && block.timestamp >= dividendsPairStaking.nextSoupCycle()) {
             dividendsPairStaking.cycleSoup();
         }
 
         uint256 fees = 0;
-        // don't run this if it's currently swapping, if either the sender or the reciever is fee exempt, or if it's not a buy or sell
-        if (!swapping && !(isFeeExempt[from] || isFeeExempt[to]) && (pair == from || pair == to)) {
+        // don't run this if it's currently _swapping, if either the sender or the reciever is fee exempt, or if it's not a buy or sell
+        if (!_swapping && !(isFeeExempt[from] || isFeeExempt[to]) && (pair == from || pair == to)) {
             fees = amount * totalFee / denominator;
             if (fees > 0) {
                 super._transfer(from, address(this), fees);
@@ -96,21 +97,21 @@ contract Mucus is ERC20 {
         super._transfer(from, to, amount);
     }
 
-    function swapBack() private {
+    function _swapBack() private {
         uint256 currentBalance = balanceOf(address(this));
-        uint16 liquidityFeeHalf = liquidityFee >> 1; // shifts it to the right by one bit, which is the same as dividing by 2
+        uint16 liquidityFeeHalf = liquidityFee >> 1;
         uint256 tokensForStakers = currentBalance * stakerFee / totalFee;
         uint256 tokensForliquidity = currentBalance * liquidityFeeHalf / totalFee;
         uint256 tokensToSwapForEth = currentBalance - tokensForStakers - tokensForliquidity;
 
         uint256 initialEthBalance = address(this).balance;
-        swapTokensForEth(tokensToSwapForEth);
+        _swapTokensForEth(tokensToSwapForEth);
         uint256 ethBalance = address(this).balance - initialEthBalance;
 
         uint256 ethForLiquidity = ethBalance * liquidityFeeHalf / (liquidityFeeHalf + teamFee);
         uint256 ethForTeam = ethBalance - ethForLiquidity;
 
-        addLiquidity(tokensForliquidity, ethForLiquidity);
+        _addLiquidity(tokensForliquidity, ethForLiquidity);
 
         super._transfer(address(this), address(dividendsPairStaking), tokensForStakers);
         dividendsPairStaking.deposit(tokensForStakers);
@@ -119,7 +120,7 @@ contract Mucus is ERC20 {
         require(teamTransferSuccess, "Failed to send ETH to team wallet");
     }
 
-    function swapTokensForEth(uint256 tokenAmount) private {
+    function _swapTokensForEth(uint256 tokenAmount) private {
         // generate the uniswap pair path of token -> weth
         address[] memory path = new address[](2);
         path[0] = address(this);
@@ -137,7 +138,7 @@ contract Mucus is ERC20 {
         );
     }
 
-    function addLiquidity(uint256 tokenAmount, uint256 ethAmount) private {
+    function _addLiquidity(uint256 tokenAmount, uint256 ethAmount) private {
         // approve token transfer to cover all possible scenarios
         _approve(address(this), address(router), tokenAmount);
 

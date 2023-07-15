@@ -64,16 +64,16 @@ contract MucusFarm is IMucusFarm, IERC721Receiver, Context {
             }
 
             if (_isFrog(tokenIds[i])) {
-                addToMucusFarm(parent, tokenIds[i], taxPerGiga, gigasStaked);
+                _addToMucusFarm(parent, tokenIds[i], taxPerGiga, gigasStaked);
             } else {
-                addToMucusFarm(parent, tokenIds[i], taxPerChad, chadsStaked);
+                _addToMucusFarm(parent, tokenIds[i], taxPerChad, chadsStaked);
             }
         }
 
         emit TokensStaked(parent, tokenIds);
     }
 
-    function addToMucusFarm(address parent, uint256 tokenId, uint256 taxPer, uint256[] storage staked) internal {
+    function _addToMucusFarm(address parent, uint256 tokenId, uint256 taxPer, uint256[] storage staked) internal {
         farm[tokenId] = Stake({
             owner: parent,
             lockingEndTime: block.timestamp + 3 days,
@@ -89,26 +89,6 @@ contract MucusFarm is IMucusFarm, IERC721Receiver, Context {
         return amount / 1 ether;
     }
 
-    // Test case 1: claim sheep and not unstake
-    // Test case 2: claim sheep and unstake
-    // Test case 3: claim wolf and not unstake
-    // Test case 4: claim wolf and unstake
-    // Test case 5: claim sheep then wolf and not unstake
-    // Test case 6: claim sheep then wolf and unstake
-    // Test case 7: claim wolf then sheep and not unstake
-    // Test case 8: claim wolf then sheep and unstake
-    // Test case 9: claim sheep when there is no wolves staked
-    // User test case 9:
-    //  - claim sheep when no wolves staked
-    //  - stake wolf
-    //  - claim sheep again
-    //  - claim wolf
-    // User test case 10:
-    //   - claim sheep then wolf and unstake
-    //   - stake wolf
-    //   - claim sheep then wolf and not unstake unsta
-    // User test case 10:
-    // User test case
     // Be mindful of the taxPerGiga and taxPerChad rates. Make sure to add on to it after the sheep mucus claim, else wise
     // the claimer is essentially claiming from there own stack, which may have some weird consequences
     function claimMany(uint256[] calldata tokenIds, bool unstake) external notPaused {
@@ -149,7 +129,7 @@ contract MucusFarm is IMucusFarm, IERC721Receiver, Context {
                 farm[tokenIds[i]] = stake;
             } else {
                 require(block.timestamp >= stake.lockingEndTime, "Cannot unstake frogs or dogs that are still locked");
-                removeFromMucusFarm(tokenIds[i], stake, _isFrog(tokenIds[i]) ? gigasStaked : chadsStaked);
+                _removeFromMucusFarm(tokenIds[i], stake, _isFrog(tokenIds[i]) ? gigasStaked : chadsStaked);
             }
         }
 
@@ -168,14 +148,14 @@ contract MucusFarm is IMucusFarm, IERC721Receiver, Context {
         }
 
         // mint mucus
-        mintMucus(_msgSender(), totalMucusEarned);
-        mintMucus(_DEAD, totalBurnableTax);
+        _mintMucus(_msgSender(), totalMucusEarned);
+        _mintMucus(_DEAD, totalBurnableTax);
 
         emit TokensFarmed(_msgSender(), totalMucusEarned, tokenIds);
         if (unstake) emit TokensUnstaked(_msgSender(), tokenIds);
     }
 
-    function removeFromMucusFarm(uint256 tokenId, Stake memory stake, uint256[] storage stakedTokenIds) internal {
+    function _removeFromMucusFarm(uint256 tokenId, Stake memory stake, uint256[] storage stakedTokenIds) internal {
         if (tokenId >= INITIAL_GIGA_CHAD_TOKEN_ID) {
             uint256 lastStakedTokenId = stakedTokenIds[stakedTokenIds.length - 1];
             Stake storage lastStaked = farm[lastStakedTokenId];
@@ -188,7 +168,7 @@ contract MucusFarm is IMucusFarm, IERC721Receiver, Context {
         frogsAndDogs.transferFrom(address(this), _msgSender(), tokenId); // transfer the frog or dog back to owner
     }
 
-    function mintMucus(address to, uint256 amount) internal {
+    function _mintMucus(address to, uint256 amount) internal {
         if (amount > 0 && totalMucusMinted < MAX_MUCUS_MINTED) {
             uint256 mucusMinted =
                 totalMucusMinted + amount > MAX_MUCUS_MINTED ? MAX_MUCUS_MINTED - totalMucusMinted : amount;
@@ -197,12 +177,6 @@ contract MucusFarm is IMucusFarm, IERC721Receiver, Context {
         }
     }
 
-    // TEST CASES:
-    // Test 1: When the previous claim is in the middle of a cycle
-    // Test 2: When the current claim is in the middle of a cycle
-    // Test 3: When the previous soup index is the same as the current soup index (when they claim twice in the same cycle)
-    // Test 4: The first claim is in the middle of the very first soup cycle
-    // Test 5: The first claim is in the middle of a cycle that isn't the first cycle
     // A users previous claim could be in the middle of a soup cycle.
     // Similarly, their current claim could be in the middle of a soup cycle.
     // If either their previous claim was in the middle of the cycle, they haven't claimed the rewards for the rest of that cycle.
@@ -232,11 +206,11 @@ contract MucusFarm is IMucusFarm, IERC721Receiver, Context {
             // so it's possible for the previousClaimTimestamp to be after the previousSoupCycle timestamp plus the soupCycleDuration if its close enough
             if (previousSoupCycle.timestamp + soupCycleDuration > stake.previousClaimTimestamp) {
                 if (toUInt256(_isFrog(tokenId)) == uint256(previousSoupCycle.soupedUp)) {
-                    burnableTax += taxRate(
+                    burnableTax += _taxRate(
                         (previousSoupCycle.timestamp + soupCycleDuration) - stake.previousClaimTimestamp, mucusRate, 5
                     );
                 } else {
-                    claimableTax += taxRate(
+                    claimableTax += _taxRate(
                         (previousSoupCycle.timestamp + soupCycleDuration) - stake.previousClaimTimestamp, mucusRate, 20
                     );
                 }
@@ -249,11 +223,11 @@ contract MucusFarm is IMucusFarm, IERC721Receiver, Context {
                 currentSoupCycle.totalFrogWins - previousSoupCycle.totalFrogWins - uint256(currentSoupCycle.soupedUp); // If the current cycle is a frog cycle, don't count it
             uint256 totalDogWinsPassed = soupCyclesPassed - totalFrogWinsPassed;
             if (_isFrog(tokenId)) {
-                claimableTax += taxRate(totalDogWinsPassed * soupCycleDuration, mucusRate, 20);
-                burnableTax += taxRate(totalFrogWinsPassed * soupCycleDuration, mucusRate, 5);
+                claimableTax += _taxRate(totalDogWinsPassed * soupCycleDuration, mucusRate, 20);
+                burnableTax += _taxRate(totalFrogWinsPassed * soupCycleDuration, mucusRate, 5);
             } else {
-                claimableTax += taxRate(totalFrogWinsPassed * soupCycleDuration, mucusRate, 20);
-                burnableTax += taxRate(totalDogWinsPassed * soupCycleDuration, mucusRate, 5);
+                claimableTax += _taxRate(totalFrogWinsPassed * soupCycleDuration, mucusRate, 20);
+                burnableTax += _taxRate(totalDogWinsPassed * soupCycleDuration, mucusRate, 5);
             }
         }
 
@@ -263,15 +237,19 @@ contract MucusFarm is IMucusFarm, IERC721Receiver, Context {
             ? currentSoupCycle.timestamp
             : stake.previousClaimTimestamp;
         if (toUInt256(_isFrog(tokenId)) == uint256(currentSoupCycle.soupedUp)) {
-            burnableTax += taxRate(block.timestamp - previousTimestamp, mucusRate, 5);
+            burnableTax += _taxRate(block.timestamp - previousTimestamp, mucusRate, 5);
         } else {
-            claimableTax += taxRate(block.timestamp - previousTimestamp, mucusRate, 20);
+            claimableTax += _taxRate(block.timestamp - previousTimestamp, mucusRate, 20);
         }
 
         return (burnableTax, claimableTax);
     }
 
-    function taxRate(uint256 duration, uint256 mucusRate, uint256 taxPercentage) internal pure returns (uint256 rate) {
+    function _taxRate(uint256 duration, uint256 mucusRate, uint256 taxPercentage)
+        internal
+        pure
+        returns (uint256 rate)
+    {
         assembly {
             rate := div(div(mul(mul(duration, mucusRate), taxPercentage), 100), 86400)
         }
@@ -301,7 +279,7 @@ contract MucusFarm is IMucusFarm, IERC721Receiver, Context {
         for (uint256 i = 0; i < tokenIds.length; i++) {
             tokenId = tokenIds[i];
             require(farm[tokenId].owner == _msgSender(), "Cannot rescue frogs or dogs that you didn't stake");
-            removeFromMucusFarm(tokenId, farm[tokenId], _isFrog(tokenId) ? gigasStaked : chadsStaked);
+            _removeFromMucusFarm(tokenId, farm[tokenId], _isFrog(tokenId) ? gigasStaked : chadsStaked);
         }
     }
 

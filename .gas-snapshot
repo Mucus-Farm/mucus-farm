@@ -1,0 +1,5 @@
+MucusOnlyOwner:testSettingDividendsPairStaking() (gas: 41017)
+MucusOnlyOwner:testSettingMucusFarm() (gas: 58253)
+MucusSwapBack:testSwapBack() (gas: 981593)
+MucusSwaps:testBuyingMucus() (gas: 192958)
+MucusSwaps:testSellMucus() (gas: 184834)
