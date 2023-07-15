@@ -7,7 +7,6 @@ import {Context} from "openzeppelin-contracts/contracts/utils/Context.sol";
 import {IMucusFarm} from "./interfaces/IMucusFarm.sol";
 import {IMucus} from "./interfaces/IMucus.sol";
 import {IDividendsPairStaking} from "./interfaces/IDividendsPairStaking.sol";
-import {console} from "forge-std/console.sol";
 
 contract MucusFarm is IMucusFarm, IERC721Receiver, Context {
     uint256 public constant INITIAL_GIGA_CHAD_TOKEN_ID = 6000;
