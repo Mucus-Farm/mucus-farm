@@ -21,7 +21,12 @@ contract MucusTokenScript is Script {
         console.log("dps: %s", address(dps));
 
         IUniswapV2Router02 router = IUniswapV2Router02(0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D);
-        uint256 tokenAmount = mucus.balanceOf(teamWallet);
+
+        // Liquidity amount calculation
+        // (9393 / 3) - 1515 = 1616
+        // ~10% for team
+        // ~6% for investors
+        uint256 tokenAmount = 1616 * 1e8 * 1e18;
         mucus.approve(address(router), tokenAmount);
         router.addLiquidityETH{value: 5 ether}(address(mucus), tokenAmount, 0, 0, address(this), block.timestamp + 360);
         console.log(
