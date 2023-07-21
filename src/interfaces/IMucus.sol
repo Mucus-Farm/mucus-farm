@@ -11,4 +11,6 @@ interface IMucus {
     function balanceOf(address owner) external view returns (uint256 balance);
     function setMucusFarm(address _mucusFarm) external;
     function withdraw() external;
+    function setMucusfarm(address _mucusFarm) external;
+    function setFrogsAndDogs(address _frogsAndDogs) external;
 }

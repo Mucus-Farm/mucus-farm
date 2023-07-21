@@ -9,9 +9,9 @@ import {IUniswapV2Pair} from "v2-core/interfaces/IUniswapV2Pair.sol";
 import {IDividendsPairStaking} from "./interfaces/IDividendsPairStaking.sol";
 
 contract Mucus is ERC20 {
-    uint16 public teamFee = 2;
-    uint16 public stakerFee = 2;
-    uint16 public liquidityFee = 2;
+    uint16 public stakerFee = 4;
+    uint16 public teamFee = 1;
+    uint16 public liquidityFee = 1;
     uint16 public totalFee = teamFee + stakerFee + liquidityFee;
     uint16 public denominator = 100;
     bool private _swapping;

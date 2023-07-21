@@ -50,6 +50,7 @@ contract Initial is Test {
 
         uint96 _baseFee = 100000000000000000;
         uint96 _gasPriceLink = 1000000000;
+        bytes32 _keyHash = 0x79d3d8832d904592c0bf9818b621522c988bb8b0c05cdc3b15aea1b6e8db0c15;
         vrfCoordinator = new VRFCoordinatorV2Mock(_baseFee, _gasPriceLink);
 
         uint64 _subscriptionId = vrfCoordinator.createSubscription();
@@ -58,7 +59,7 @@ contract Initial is Test {
         mucus = new Mucus(teamWallet);
         dps = new DividendsPairStaking(address(mucus));
         fnd =
-        new FrogsAndDogs(ETH_MINT_PRICE, keccak256(abi.encode(address(0))), _subscriptionId, "", "", address(vrfCoordinator), address(mucus), address(dps));
+        new FrogsAndDogs(ETH_MINT_PRICE, keccak256(abi.encode(address(0))), _subscriptionId, "", "", address(vrfCoordinator), _keyHash, address(mucus), address(dps));
         mucusFarm = new MucusFarm(address(fnd), address(mucus), address(dps));
 
         mucus.setDividendsPairStaking(address(dps));
@@ -66,7 +67,7 @@ contract Initial is Test {
         mucus.setFrogsAndDogs(address(fnd));
 
         fnd.setMucusFarm(address(mucusFarm));
-        fnd.setPublicMintedStarted();
+        fnd.setPublicMintStarted();
 
         vrfCoordinator.addConsumer(_subscriptionId, address(fnd));
 

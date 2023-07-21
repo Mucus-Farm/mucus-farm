@@ -61,7 +61,10 @@ contract DividendsPairStaking is IDividendsPairStaking {
             staker.previousDividendsPerFrog = dividendsPerFrog;
             staker.previousDividendsPerDog = dividendsPerDog;
         }
-        staker.lockingEndDate = block.timestamp + 2 weeks;
+
+        // TODO: undo this
+        // staker.lockingEndDate = block.timestamp + 2 weeks;
+        staker.lockingEndDate = block.timestamp;
         staker.totalAmount += amount;
 
         if (faction == Faction.DOG) {

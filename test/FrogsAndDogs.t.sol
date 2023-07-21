@@ -49,6 +49,7 @@ contract Initial is Test {
 
         uint96 _baseFee = 100000000000000000;
         uint96 _gasPriceLink = 1000000000;
+        bytes32 _keyHash = 0x79d3d8832d904592c0bf9818b621522c988bb8b0c05cdc3b15aea1b6e8db0c15;
         vrfCoordinator = new VRFCoordinatorV2Mock(_baseFee, _gasPriceLink);
 
         uint64 _subscriptionId = vrfCoordinator.createSubscription();
@@ -68,7 +69,7 @@ contract Initial is Test {
         bytes32 root = m.getRoot(data);
 
         fnd =
-        new FrogsAndDogs(ETH_MINT_PRICE, root, _subscriptionId, "", "", address(vrfCoordinator), address(mucus), address(dps));
+        new FrogsAndDogs(ETH_MINT_PRICE, root, _subscriptionId, "", "", address(vrfCoordinator), _keyHash, address(mucus), address(dps));
         mucusFarm = new MucusFarm(address(fnd), address(mucus), address(dps));
         fnd.setMucusFarm(address(mucusFarm));
 
@@ -139,7 +140,7 @@ contract FndMint is Initial {
     function setUp() public override {
         super.setUp();
         vm.startPrank(address(owner));
-        fnd.setPublicMintedStarted();
+        fnd.setPublicMintStarted();
     }
 
     function testRevertsMint() public {
@@ -219,7 +220,7 @@ contract FndBreedAndAdopt is Initial {
     function setUp() public override {
         super.setUp();
         vm.startPrank(address(owner));
-        fnd.setPublicMintedStarted();
+        fnd.setPublicMintStarted();
     }
 
     function test_revertsBreedAndAdopt() public {
@@ -299,7 +300,7 @@ contract FndTransform is Initial {
     function setUp() public override {
         super.setUp();
         vm.startPrank(address(owner));
-        fnd.setPublicMintedStarted();
+        fnd.setPublicMintStarted();
     }
 
     function test_revertsTransform() public {
@@ -467,7 +468,7 @@ contract FndBreedAndStolen is Initial {
     function setUp() public override {
         super.setUp();
         vm.startPrank(address(owner));
-        fnd.setPublicMintedStarted();
+        fnd.setPublicMintStarted();
     }
 
     function test_breedStakeAndNotStolenSinceNoSouped() public {

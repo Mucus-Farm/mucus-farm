@@ -35,7 +35,7 @@ contract FrogsAndDogs is IFrogsAndDogs, ERC721, VRFConsumerBaseV2, Ownable, Paus
     mapping(address => uint256) public whitelistMinted;
 
     // see https://docs.chain.link/docs/vrf/v2/subscription/supported-networks/#configurations
-    bytes32 public immutable keyHash = 0x474e34a077df58807dbe9c96d3c009b23b3c6d0cce433e59bbf5b34f823bc56c;
+    bytes32 public immutable keyHash;
 
     // Depends on the number of requested values that you want sent to the
     // fulfillRandomWords() function. Storing each word costs about 20,000 gas,
@@ -63,6 +63,7 @@ contract FrogsAndDogs is IFrogsAndDogs, ERC721, VRFConsumerBaseV2, Ownable, Paus
         string memory _initialBaseURI,
         string memory _initialContractURI,
         address _vrfCoordinator,
+        bytes32 _keyHash,
         address _mucus,
         address _dividendsPerStaking
     ) ERC721("Frogs and Dogs", "FND") VRFConsumerBaseV2(_vrfCoordinator) {
@@ -71,6 +72,7 @@ contract FrogsAndDogs is IFrogsAndDogs, ERC721, VRFConsumerBaseV2, Ownable, Paus
         vrfCoordinator = VRFCoordinatorV2Interface(_vrfCoordinator);
         mucus = IMucus(_mucus);
         dividendsPairStaking = IDividendsPairStaking(_dividendsPerStaking);
+        keyHash = _keyHash;
         subscriptionId = _subscriptionId;
         baseURI = _initialBaseURI;
         contractURI = _initialContractURI;
@@ -283,7 +285,7 @@ contract FrogsAndDogs is IFrogsAndDogs, ERC721, VRFConsumerBaseV2, Ownable, Paus
         else _unpause();
     }
 
-    function setPublicMintedStarted() external onlyOwner {
+    function setPublicMintStarted() external onlyOwner {
         publicMintStarted = true;
     }
 
