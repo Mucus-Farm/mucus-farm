@@ -19,6 +19,7 @@ contract MucusTokenScript is Script {
         console.log("mucus and dividends pair staking deployed");
         console.log("mucus: %s", address(mucus));
         console.log("dps: %s", address(dps));
+        console.log("block number: ", block.number);
 
         IUniswapV2Router02 router = IUniswapV2Router02(0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D);
 

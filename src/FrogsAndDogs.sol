@@ -120,7 +120,6 @@ contract FrogsAndDogs is IFrogsAndDogs, ERC721, VRFConsumerBaseV2, Ownable, Paus
     // this funciton will request for the amount of eth needed to mint the amount of frogs and dogs
     // TODO: pass in the price of eth in wei and use that to determine how much ETH should be sent in to cover the costs of the callback function
     function breedAndAdopt(uint256 amount, bool stake) external payable whenNotPaused {
-        // TODO: THINK ABOUT THIS ONE MORE SINCE IN LINE 72 IT'S ALSO <=
         require(minted >= tokensPaidInEth, "Breeding not available yet");
         require(amount > 0 && amount <= 10, "Invalid mint amount");
         require(minted + amount <= FROGS_AND_DOGS_SUPPLY, "All Dogs and Frogs have been minted");
