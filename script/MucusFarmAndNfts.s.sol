@@ -10,13 +10,13 @@ import {LinkTokenInterface} from "chainlink/contracts/src/v0.8/interfaces/LinkTo
 import {VRFConsumerBaseV2} from "chainlink/contracts/src/v0.8/vrf/VRFConsumerBaseV2.sol";
 
 contract MucusFarmAndNfts is Script {
-    // TODO: swap out for mainnet for prod launch
     bytes32 constant _keyHash = 0x79d3d8832d904592c0bf9818b621522c988bb8b0c05cdc3b15aea1b6e8db0c15;
     address constant _vrfCoordinator = 0x2Ca8E0C643bDe4C2E08ab1fA0da3401AdAD7734D;
     address constant _linkToken = 0x326C977E6efc84E512bB9C30f76E30c160eD06FB;
 
     uint256 constant ETH_MINT_PRICE = 0.001 ether;
     bytes32 constant merkleRoot = bytes32(0x0);
+    string constant _baseURI = "https://fnd-image.0xmucushq.workers.dev/";
 
     function run() external {
         uint256 deployerPrivateKey = vm.envUint("PRIVATE_KEY");
@@ -34,7 +34,7 @@ contract MucusFarmAndNfts is Script {
 
         IMucus mucus = IMucus(_mucus);
         FrogsAndDogs fnd =
-        new FrogsAndDogs(ETH_MINT_PRICE, merkleRoot, _subscriptionId, "", "", _vrfCoordinator, _keyHash, _mucus, _dps);
+        new FrogsAndDogs(ETH_MINT_PRICE, merkleRoot, _subscriptionId, _baseURI, "", _vrfCoordinator, _keyHash, _mucus, _dps);
         MucusFarm mucusFarm = new MucusFarm(address(fnd), _mucus, _dps);
         console.log("frogs and dogs deployed: ", address(fnd));
         console.log("mucus farm deployed: ", address(mucusFarm));

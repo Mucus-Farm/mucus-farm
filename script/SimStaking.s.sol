@@ -13,8 +13,8 @@ contract SimStaking is Script {
 
         IDividendsPairStaking dps = IDividendsPairStaking(dpsAddress);
 
-        // dps.addStake{value: 1 ether}(IDividendsPairStaking.Faction.DOG, 0);
-        dps.removeStake(81717109288160843143993, IDividendsPairStaking.Faction.DOG);
+        dps.addStake{value: 1 ether}(IDividendsPairStaking.Faction.DOG, 0);
+        // dps.removeStake(81717109288160843143993, IDividendsPairStaking.Faction.DOG);
 
         (
             uint256 totalAmount,

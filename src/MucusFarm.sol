@@ -76,7 +76,8 @@ contract MucusFarm is IMucusFarm, IERC721Receiver, Context {
     function _addToMucusFarm(address parent, uint256 tokenId, uint256 taxPer, uint256[] storage staked) internal {
         farm[tokenId] = Stake({
             owner: parent,
-            lockingEndTime: block.timestamp + 3 days,
+            // lockingEndTime: block.timestamp + 3 days,
+            lockingEndTime: block.timestamp, // TODO: reverse this for prod
             previousClaimTimestamp: block.timestamp,
             previousTaxPer: taxPer,
             previousSoupIndex: dividendsPairStaking.currentSoupIndex(),

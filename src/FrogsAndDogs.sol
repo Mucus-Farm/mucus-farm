@@ -43,7 +43,7 @@ contract FrogsAndDogs is IFrogsAndDogs, ERC721, VRFConsumerBaseV2, Ownable, Paus
     // this limit based on the network that you select, the size of the request,
     // and the processing of the callback request in the fulfillRandomWords()
     // function.
-    uint32 public constant callbackGasLimit = 1000000000;
+    uint32 public constant callbackGasLimit = 2500000;
 
     // The default is 3, but you can set this higher.
     uint16 public constant requestConfirmations = 3;
@@ -104,24 +104,26 @@ contract FrogsAndDogs is IFrogsAndDogs, ERC721, VRFConsumerBaseV2, Ownable, Paus
     function _mint(uint256 amount, bool stake) internal {
         uint256[] memory tokenIds = stake ? new uint256[](amount) : new uint256[](0);
 
+        uint256 _minted = minted;
         for (uint256 i = 0; i < amount; i++) {
             if (stake) {
-                _safeMint(address(mucusFarm), minted);
-                tokenIds[i] = minted;
+                _safeMint(address(mucusFarm), _minted);
+                tokenIds[i] = _minted;
             } else {
-                _safeMint(_msgSender(), minted);
+                _safeMint(_msgSender(), _minted);
             }
-            minted++;
+            _minted++;
         }
+        minted = _minted;
 
         if (stake) mucusFarm.addManyToMucusFarm(_msgSender(), tokenIds);
     }
 
     // this funciton will request for the amount of eth needed to mint the amount of frogs and dogs
-    // TODO: pass in the price of eth in wei and use that to determine how much ETH should be sent in to cover the costs of the callback function
     function breedAndAdopt(uint256 amount, bool stake) external payable whenNotPaused {
         require(minted >= tokensPaidInEth, "Breeding not available yet");
-        require(amount > 0 && amount <= 10, "Invalid mint amount");
+        // TODO: revert this for prod
+        // require(amount > 0 && amount <= 10, "Invalid mint amount");
         require(minted + amount <= FROGS_AND_DOGS_SUPPLY, "All Dogs and Frogs have been minted");
         require(MUCUS_MINT_PRICE * amount <= mucus.balanceOf(_msgSender()), "Insufficient $MUCUS balance");
 
@@ -197,17 +199,19 @@ contract FrogsAndDogs is IFrogsAndDogs, ERC721, VRFConsumerBaseV2, Ownable, Paus
     function mintOrStealFrogOrDog(bool stake, uint256 amount, address parent, uint256 rng) internal {
         uint256[] memory tokenIds = stake ? new uint256[](amount) : new uint256[](0);
 
+        uint256 _minted = minted;
         for (uint256 i = 0; i < amount; i++) {
             address recipient = selectRecipient(rng, parent);
             if (!stake || recipient != parent) {
-                _safeMint(recipient, minted);
+                _safeMint(recipient, _minted);
                 if (stake) tokenIds[i] = 9393;
             } else {
-                _safeMint(address(mucusFarm), minted);
-                tokenIds[i] = minted;
+                _safeMint(address(mucusFarm), _minted);
+                tokenIds[i] = _minted;
             }
-            minted++;
+            _minted++;
         }
+        minted = _minted;
 
         if (stake) mucusFarm.addManyToMucusFarm(parent, tokenIds);
     }
@@ -290,6 +294,10 @@ contract FrogsAndDogs is IFrogsAndDogs, ERC721, VRFConsumerBaseV2, Ownable, Paus
 
     function setBaseURI(string memory uri) external onlyOwner {
         baseURI = uri;
+    }
+
+    function setContractURI(string memory uri) external onlyOwner {
+        contractURI = uri;
     }
 
     function _baseURI() internal view override returns (string memory) {
