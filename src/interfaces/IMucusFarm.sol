@@ -21,7 +21,7 @@ interface IMucusFarm {
     event TokensFarmed(address indexed parent, uint256 mucusFarmed, uint256[] tokenIds);
     event MucusEarned(address indexed to, uint256 amount);
 
-    function addManyToMucusFarm(address parent, uint256[] memory tokenIds) external;
+    function addManyToMucusFarm(uint256[] memory tokenIds) external;
     function claimMany(uint256[] memory tokenIds, bool unstake) external;
     function rescue(uint256[] calldata tokenIds) external;
     function setPaused(bool _paused) external;

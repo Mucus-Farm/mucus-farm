@@ -96,7 +96,7 @@ contract Initial is Test {
         vm.deal(address(2), 1000 ether);
         vm.startPrank(address(2));
         for (uint256 i; i < tokensPaidInEth / 10; i++) {
-            fnd.mint{value: ETH_MINT_PRICE * 10}(10, false);
+            fnd.mint{value: ETH_MINT_PRICE * 10}(10);
         }
         vm.stopPrank();
     }
@@ -112,7 +112,7 @@ contract Initial is Test {
             tokenIds[0] = i;
             tokenIds[1] = i + 2;
             tokenIds[2] = i + 4;
-            fnd.transform(tokenIds, dog, false);
+            fnd.transform(tokenIds, dog);
 
             vrfCoordinator.fulfillRandomWords(requestId + j, address(fnd));
             j++;
@@ -131,7 +131,7 @@ contract Initial is Test {
             tokenIds[0] = i;
             tokenIds[1] = i + 2;
             tokenIds[2] = i + 4;
-            fnd.transform(tokenIds, frog, false);
+            fnd.transform(tokenIds, frog);
 
             vrfCoordinator.fulfillRandomWords(requestId + j, address(fnd));
             j++;
@@ -150,7 +150,7 @@ contract Initial is Test {
         }
 
         vm.prank(address(2));
-        mucusFarm.addManyToMucusFarm(address(2), gigaTokenIds);
+        mucusFarm.addManyToMucusFarm(gigaTokenIds);
 
         return gigaTokenIds;
     }
@@ -165,7 +165,7 @@ contract Initial is Test {
         }
 
         vm.prank(address(2));
-        mucusFarm.addManyToMucusFarm(address(2), chadTokenIds);
+        mucusFarm.addManyToMucusFarm(chadTokenIds);
 
         return chadTokenIds;
     }
@@ -188,7 +188,7 @@ contract MucusFarmAddManyToFarm is Initial {
 
         vm.expectRevert(bytes("sender must be the parent or the frogs and dogs contract"));
         vm.prank(address(2));
-        mucusFarm.addManyToMucusFarm(address(1), tokenIds);
+        mucusFarm.addManyToMucusFarm(tokenIds);
     }
 
     function test_addFrogsAndDogsMucusFarm() public {
@@ -204,7 +204,7 @@ contract MucusFarmAddManyToFarm is Initial {
         emit TokensStaked(address(2), tokenIds);
 
         vm.prank(address(2));
-        mucusFarm.addManyToMucusFarm(address(2), tokenIds);
+        mucusFarm.addManyToMucusFarm(tokenIds);
 
         for (uint256 i; i < 10; i++) {
             (
@@ -250,7 +250,7 @@ contract MucusFarmAddManyToFarm is Initial {
         emit TokensStaked(address(2), chadTokenIds);
 
         vm.prank(address(2));
-        mucusFarm.addManyToMucusFarm(address(2), chadTokenIds);
+        mucusFarm.addManyToMucusFarm(chadTokenIds);
 
         for (uint256 i; i < chadTokenIds.length; i++) {
             (
@@ -275,7 +275,7 @@ contract MucusFarmAddManyToFarm is Initial {
         emit TokensStaked(address(2), gigaTokenIds);
 
         vm.prank(address(2));
-        mucusFarm.addManyToMucusFarm(address(2), gigaTokenIds);
+        mucusFarm.addManyToMucusFarm(gigaTokenIds);
 
         for (uint256 i; i < gigaTokenIds.length; i++) {
             (
@@ -317,7 +317,7 @@ contract MucusFarmStakeAndUnstake is Initial {
 
         vm.expectEmit(true, true, true, true);
         emit TokensStaked(address(2), tokenIds);
-        mucusFarm.addManyToMucusFarm(address(2), tokenIds);
+        mucusFarm.addManyToMucusFarm(tokenIds);
 
         for (uint256 i; i < 10; i++) {
             assertEq(fnd.ownerOf(i), address(mucusFarm), "staked fnd");
@@ -370,7 +370,7 @@ contract MucusFarmFndEarnings is Initial {
         vm.expectRevert(bytes("Cannot claim rewards for frog or dog that you didn't stake"));
         mucusFarm.claimMany(tokenIds, false);
 
-        mucusFarm.addManyToMucusFarm(address(2), tokenIds);
+        mucusFarm.addManyToMucusFarm(tokenIds);
 
         vm.expectRevert(bytes("Cannot unstake frogs or dogs that are still locked"));
         mucusFarm.claimMany(tokenIds, true);
@@ -389,7 +389,7 @@ contract MucusFarmFndEarnings is Initial {
         uint256 dailyClaimedTax = DAILY_MUCUS_RATE * 20 / 100;
         uint256 dailyBurnedTax = DAILY_MUCUS_RATE * 5 / 100;
 
-        mucusFarm.addManyToMucusFarm(address(2), tokenIds);
+        mucusFarm.addManyToMucusFarm(tokenIds);
         vm.warp(previousBlockTimestamp + 1 days);
 
         vm.expectEmit(true, true, true, true);
@@ -422,9 +422,9 @@ contract MucusFarmFndEarnings is Initial {
         uint256 previousBlockTimestamp = block.timestamp;
 
         vm.startPrank(address(2));
-        mucusFarm.addManyToMucusFarm(address(2), tokenIdsSet1);
+        mucusFarm.addManyToMucusFarm(tokenIdsSet1);
         vm.warp(previousBlockTimestamp + 1 days);
-        mucusFarm.addManyToMucusFarm(address(2), tokenIdsSet2);
+        mucusFarm.addManyToMucusFarm(tokenIdsSet2);
         vm.warp(previousBlockTimestamp + 2 days);
         mucusFarm.claimMany(tokenIds, false);
         vm.stopPrank();
@@ -456,7 +456,7 @@ contract MucusFarmFndEarnings is Initial {
         uint256 previousBlockTimestamp = block.timestamp;
 
         vm.startPrank(address(2));
-        mucusFarm.addManyToMucusFarm(address(2), tokenIds);
+        mucusFarm.addManyToMucusFarm(tokenIds);
         vm.warp(previousBlockTimestamp + 1 days);
         mucusFarm.claimMany(tokenIds, false);
         vm.warp(previousBlockTimestamp + 2 days);
@@ -494,9 +494,9 @@ contract MucusFarmFndEarnings is Initial {
         uint256 previousBlockTimestamp = block.timestamp;
 
         vm.startPrank(address(2));
-        mucusFarm.addManyToMucusFarm(address(2), tokenIdsSet1);
+        mucusFarm.addManyToMucusFarm(tokenIdsSet1);
         vm.warp(previousBlockTimestamp + 1 days);
-        mucusFarm.addManyToMucusFarm(address(2), tokenIdsSet2);
+        mucusFarm.addManyToMucusFarm(tokenIdsSet2);
         vm.warp(previousBlockTimestamp + 2 days);
         mucusFarm.claimMany(tokenIds, false);
         vm.warp(previousBlockTimestamp + 3 days);
@@ -550,7 +550,7 @@ contract MucusFarmGcEarnings is Initial {
         tokenIds[1] = 6001;
 
         vm.startPrank(address(2));
-        mucusFarm.addManyToMucusFarm(address(2), tokenIds);
+        mucusFarm.addManyToMucusFarm(tokenIds);
         vm.warp(block.timestamp + 1 days);
         mucusFarm.claimMany(tokenIds, false);
 
@@ -574,7 +574,7 @@ contract MucusFarmGcEarnings is Initial {
         tokenIds[1] = 6001;
 
         vm.startPrank(address(2));
-        mucusFarm.addManyToMucusFarm(address(2), tokenIds);
+        mucusFarm.addManyToMucusFarm(tokenIds);
         vm.warp(block.timestamp + 1 days);
         mucusFarm.claimMany(tokenIds, false);
 
@@ -593,7 +593,7 @@ contract MucusFarmGcEarnings is Initial {
         tokenIds[1] = 6001;
 
         vm.prank(address(2));
-        mucusFarm.addManyToMucusFarm(address(2), tokenIds);
+        mucusFarm.addManyToMucusFarm(tokenIds);
         fndClaim();
         vm.warp(block.timestamp + 1 days);
         vm.prank(address(2));
@@ -616,7 +616,7 @@ contract MucusFarmGcEarnings is Initial {
         tokenIds[1] = 6001;
 
         vm.prank(address(2));
-        mucusFarm.addManyToMucusFarm(address(2), tokenIds);
+        mucusFarm.addManyToMucusFarm(tokenIds);
 
         (, uint256 fndClaimedTax,) = fndStakeThenClaim();
         assertEq(mucusFarm.taxPerChad(), 0, "taxPerChad");
@@ -648,7 +648,7 @@ contract MucusFarmGcEarnings is Initial {
         uint256 fndClaimedTax = DAILY_MUCUS_RATE * 20 / 100;
         uint256 fndBurnedTax = DAILY_MUCUS_RATE * 5 / 100;
 
-        mucusFarm.addManyToMucusFarm(address(3), tokenIds);
+        mucusFarm.addManyToMucusFarm(tokenIds);
         vm.warp(block.timestamp + 1 days);
         mucusFarm.claimMany(tokenIds, false);
         vm.stopPrank();
@@ -946,7 +946,7 @@ contract MucusFarmSoupCycleEarnings is Initial {
         tokenIds[0] = 0;
 
         vm.prank(address(2));
-        mucusFarm.addManyToMucusFarm(address(2), tokenIds);
+        mucusFarm.addManyToMucusFarm(tokenIds);
     }
 
     function claimDog() public {
@@ -962,7 +962,7 @@ contract MucusFarmSoupCycleEarnings is Initial {
         tokenIds[0] = 1;
 
         vm.prank(address(2));
-        mucusFarm.addManyToMucusFarm(address(2), tokenIds);
+        mucusFarm.addManyToMucusFarm(tokenIds);
     }
 
     function claimFrog() public {
@@ -1003,7 +1003,7 @@ contract MucusFarmRescue is Initial {
         }
 
         vm.prank(address(2));
-        mucusFarm.addManyToMucusFarm(address(2), tokenIds);
+        mucusFarm.addManyToMucusFarm(tokenIds);
 
         vm.prank(address(2));
         vm.expectRevert(bytes("Rescue mode not enabled"));
@@ -1022,7 +1022,7 @@ contract MucusFarmRescue is Initial {
         }
 
         vm.prank(address(2));
-        mucusFarm.addManyToMucusFarm(address(2), tokenIds);
+        mucusFarm.addManyToMucusFarm(tokenIds);
 
         for (uint256 i; i < 10; i++) {
             assertEq(fnd.ownerOf(i), address(mucusFarm));

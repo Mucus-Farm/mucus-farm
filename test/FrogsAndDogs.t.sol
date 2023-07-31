@@ -24,6 +24,7 @@ contract Initial is Test {
     uint256 public gigasMinted = 6001;
     uint256 public chadsMinted = 6000;
     uint256 public tokensPaidInEth = 2000; // 1/3 of the supply
+    uint256 teamAmount = 20;
 
     Mucus public mucus;
     DividendsPairStaking public dps;
@@ -82,8 +83,8 @@ contract Initial is Test {
     }
 
     function mintEthSale() public {
-        for (uint256 i; i < tokensPaidInEth / 10; i++) {
-            fnd.mint{value: ETH_MINT_PRICE * 10}(10, false);
+        for (uint256 i; i < (tokensPaidInEth - teamAmount) / 10; i++) {
+            fnd.mint{value: ETH_MINT_PRICE * 10}(10);
         }
     }
 }
@@ -100,34 +101,34 @@ contract FndWhitelistMint is Initial {
 
         // error cases
         vm.expectRevert(bytes("Invalid proof"));
-        fnd.whitelistMint(0, false, invalidProof);
+        fnd.whitelistMint(0, invalidProof);
 
         vm.expectRevert(bytes("Invalid mint amount"));
-        fnd.whitelistMint(0, false, proof);
+        fnd.whitelistMint(0, proof);
 
         vm.expectRevert(bytes("Invalid mint amount"));
-        fnd.whitelistMint(11, false, proof);
+        fnd.whitelistMint(11, proof);
 
-        fnd.whitelistMint(10, false, proof);
+        fnd.whitelistMint(10, proof);
         vm.expectRevert(bytes("Cannot mint more than 10 whitelist tokens"));
-        fnd.whitelistMint(1, false, proof);
+        fnd.whitelistMint(1, proof);
 
         vm.stopPrank();
     }
 
-    function testMintWithoutStaking() public {
+    function testWhitelistMint() public {
         vm.startPrank(address(2));
 
         bytes32[] memory proof = m.getProof(data, 2);
 
         vm.expectEmit(true, true, true, true);
         for (uint256 i; i < 10; i++) {
-            emit Transfer(address(0), address(2), i);
+            emit Transfer(address(0), address(2), teamAmount + i);
         }
-        fnd.whitelistMint(10, false, proof);
+        fnd.whitelistMint(10, proof);
 
         for (uint256 i; i < 10; i++) {
-            assertEq(fnd.ownerOf(i), address(2));
+            assertEq(fnd.ownerOf(teamAmount + i), address(2));
         }
         assertEq(fnd.balanceOf(address(2)), 10);
     }
@@ -149,70 +150,33 @@ contract FndMint is Initial {
 
         // error cases
         vm.expectRevert(bytes("Invalid mint amount"));
-        fnd.mint{value: 0}(0, false);
+        fnd.mint{value: 0}(0);
 
         vm.expectRevert(bytes("Invalid mint amount"));
-        fnd.mint{value: ETH_MINT_PRICE * 11}(11, false);
+        fnd.mint{value: ETH_MINT_PRICE * 11}(11);
 
         vm.expectRevert(bytes("Invalid payment amount"));
-        fnd.mint{value: ETH_MINT_PRICE * 9}(10, false);
+        fnd.mint{value: ETH_MINT_PRICE * 9}(10);
 
-        for (uint256 i; i < tokensPaidInEth / 10; i++) {
-            fnd.mint{value: ETH_MINT_PRICE * 10}(10, false);
+        for (uint256 i; i < (tokensPaidInEth - teamAmount) / 10; i++) {
+            fnd.mint{value: ETH_MINT_PRICE * 10}(10);
         }
         vm.expectRevert(bytes("All Dogs and Frogs for sale have been minted"));
-        fnd.mint{value: ETH_MINT_PRICE}(1, false);
+        fnd.mint{value: ETH_MINT_PRICE}(1);
     }
 
-    function testMintWithoutStaking() public {
+    function testMint() public {
         vm.startPrank(address(2));
         vm.expectEmit(true, true, true, true);
         for (uint256 i; i < 10; i++) {
-            emit Transfer(address(0), address(2), i);
+            emit Transfer(address(0), address(2), teamAmount + i);
         }
-        fnd.mint{value: ETH_MINT_PRICE * 10}(10, false);
+        fnd.mint{value: ETH_MINT_PRICE * 10}(10);
 
         for (uint256 i; i < 10; i++) {
-            assertEq(fnd.ownerOf(i), address(2));
+            assertEq(fnd.ownerOf(teamAmount + i), address(2));
         }
         assertEq(fnd.balanceOf(address(2)), 10);
-    }
-
-    function testMintWithStaking() public {
-        vm.startPrank(address(2));
-        vm.expectEmit(true, true, true, true);
-        for (uint256 i; i < 10; i++) {
-            emit Transfer(address(0), address(mucusFarm), i);
-        }
-        for (uint256 i; i < 10; i++) {
-            emit TokenStaked(address(2), i);
-        }
-        fnd.mint{value: ETH_MINT_PRICE * 10}(10, true);
-
-        for (uint256 i; i < 10; i++) {
-            assertEq(fnd.ownerOf(i), address(mucusFarm), "ownerOf");
-        }
-        assertEq(fnd.balanceOf(address(mucusFarm)), 10, "balanceOf");
-
-        for (uint256 i; i < 1; i++) {
-            (
-                address stakingOwner,
-                uint256 lockingEndTime,
-                uint256 previousClaimTimestamp,
-                uint256 previousTaxPer,
-                uint256 previousSoupIndex,
-                uint256 gigaOrChadIndex
-            ) = mucusFarm.farm(i);
-
-            assertEq(stakingOwner, address(2), "owner");
-            assertEq(lockingEndTime, block.timestamp + 3 days);
-            assertEq(previousClaimTimestamp, block.timestamp, "previousClaimTimestamp");
-            assertEq(previousTaxPer, 0, "previousTaxPer");
-            assertEq(previousSoupIndex, 0, "previousSoupIndex");
-            assertEq(gigaOrChadIndex, 0, "gigaOrChadIndex");
-        }
-
-        vm.stopPrank();
     }
 }
 
@@ -228,18 +192,18 @@ contract FndBreedAndAdopt is Initial {
         vm.deal(address(2), 10000 ether);
 
         vm.expectRevert(bytes("Breeding not available yet"));
-        fnd.breedAndAdopt(10, false);
+        fnd.breedAndAdopt(10);
 
         mintEthSale();
 
         vm.expectRevert(bytes("Invalid mint amount"));
-        fnd.breedAndAdopt(0, false);
+        fnd.breedAndAdopt(0);
 
         vm.expectRevert(bytes("Invalid mint amount"));
-        fnd.breedAndAdopt(11, false);
+        fnd.breedAndAdopt(11);
 
         vm.expectRevert(bytes("Insufficient $MUCUS balance"));
-        fnd.breedAndAdopt(10, false);
+        fnd.breedAndAdopt(10);
 
         vm.stopPrank();
 
@@ -248,17 +212,17 @@ contract FndBreedAndAdopt is Initial {
         vm.startPrank(address(2));
 
         for (uint256 i; i < (FROGS_AND_DOGS_SUPPLY - tokensPaidInEth) / 10; i++) {
-            fnd.breedAndAdopt(10, true);
+            fnd.breedAndAdopt(10);
             vrfCoordinator.fulfillRandomWords(i + 1, address(fnd));
         }
 
         vm.expectRevert(bytes("All Dogs and Frogs have been minted"));
-        fnd.breedAndAdopt(1, false);
+        fnd.breedAndAdopt(1);
 
         vm.stopPrank();
     }
 
-    function test_breedAndNotStake() public {
+    function test_breedAndAdopt() public {
         vm.deal(owner, 10000 ether);
         vm.startPrank(owner);
         mintEthSale();
@@ -269,30 +233,11 @@ contract FndBreedAndAdopt is Initial {
         uint256 mucusBalanceBefore = mucus.balanceOf(address(2));
 
         vm.prank(address(2));
-        fnd.breedAndAdopt(1, false);
+        fnd.breedAndAdopt(1);
         vrfCoordinator.fulfillRandomWords(1, address(fnd));
 
         assertEq(mucus.balanceOf(address(2)), mucusBalanceBefore - MUCUS_MINT_PRICE, "mucus balanceOf");
         assertEq(fnd.balanceOf(address(2)), 1, "fnd balanceOf");
-    }
-
-    function test_breedAndStake() public {
-        vm.deal(owner, 10000 ether);
-        vm.startPrank(owner);
-        mintEthSale();
-        vm.stopPrank();
-
-        vm.prank(owner);
-        mucus.transfer(address(2), 3000 * 1e8 ether);
-        uint256 mucusBalanceBefore = mucus.balanceOf(address(2));
-
-        vm.prank(address(2));
-        fnd.breedAndAdopt(1, true);
-        vrfCoordinator.fulfillRandomWords(1, address(fnd));
-
-        assertEq(mucus.balanceOf(address(2)), mucusBalanceBefore - MUCUS_MINT_PRICE, "mucus balanceOf");
-        assertEq(fnd.balanceOf(address(2)), 0, "fnd balanceOf user");
-        assertEq(fnd.balanceOf(address(mucusFarm)), 1, "fnd balanceOf mucusFarm");
     }
 }
 
@@ -316,9 +261,9 @@ contract FndTransform is Initial {
         vm.expectRevert(bytes("Must use 3 of the same types"));
         uint256[] memory tokenIds = new uint256[](3);
         for (uint256 i; i < tokenIds.length; i++) {
-            tokenIds[i] = i;
+            tokenIds[i] = teamAmount + i;
         }
-        fnd.transform(tokenIds, dog, false);
+        fnd.transform(tokenIds, dog);
 
         breedMultiple();
 
@@ -330,17 +275,17 @@ contract FndTransform is Initial {
         tokenIds[0] = 3732;
         tokenIds[1] = 3734;
         tokenIds[2] = 3736;
-        fnd.transform(tokenIds, dog, false);
+        fnd.transform(tokenIds, dog);
 
         vm.expectRevert(bytes("All Gigas have been minted"));
         tokenIds[0] = 3733;
         tokenIds[1] = 3735;
         tokenIds[2] = 3737;
-        fnd.transform(tokenIds, frog, false);
+        fnd.transform(tokenIds, frog);
         vm.stopPrank();
     }
 
-    function test_transformSuccessfulAndNotStake() public {
+    function test_transformSuccessful() public {
         vm.startPrank(address(2));
         deal(address(2), 10000 ether);
         mintEthSale();
@@ -353,39 +298,15 @@ contract FndTransform is Initial {
         uint256 requestId = vrfCoordinator.s_nextRequestId();
 
         uint256[] memory tokenIds = new uint256[](3);
-        tokenIds[0] = 0;
-        tokenIds[1] = 2;
-        tokenIds[2] = 4;
+        tokenIds[0] = 20;
+        tokenIds[1] = 22;
+        tokenIds[2] = 24;
         vm.prank(address(2));
-        fnd.transform(tokenIds, dog, false);
+        fnd.transform(tokenIds, dog);
         vrfCoordinator.fulfillRandomWords(requestId, address(fnd));
 
         assertEq(fnd.balanceOf(address(2)), balanceBefore - 3 + 1, "balance of user");
         assertEq(fnd.ownerOf(6000), address(2), "owner of new token");
-    }
-
-    function test_transformSuccessfulAndStake() public {
-        vm.startPrank(address(2));
-        deal(address(2), 10000 ether);
-        mintEthSale();
-        vm.stopPrank();
-
-        vm.prank(owner);
-        mucus.transfer(address(2), 3000 * 1e8 ether);
-
-        uint256 balanceBefore = fnd.balanceOf(address(2));
-        uint256 requestId = vrfCoordinator.s_nextRequestId();
-
-        uint256[] memory tokenIds = new uint256[](3);
-        tokenIds[0] = 0;
-        tokenIds[1] = 2;
-        tokenIds[2] = 4;
-        vm.prank(address(2));
-        fnd.transform(tokenIds, dog, true);
-        vrfCoordinator.fulfillRandomWords(requestId, address(fnd));
-
-        assertEq(fnd.balanceOf(address(2)), balanceBefore - 3, "balance of user");
-        assertEq(fnd.ownerOf(6000), address(mucusFarm), "owner of new token");
     }
 
     function test_transformFail() public {
@@ -403,11 +324,11 @@ contract FndTransform is Initial {
 
         uint256 requestId = vrfCoordinator.s_nextRequestId();
         uint256[] memory tokenIds = new uint256[](3);
-        tokenIds[0] = 30;
-        tokenIds[1] = 32;
-        tokenIds[2] = 34;
+        tokenIds[0] = 40;
+        tokenIds[1] = 42;
+        tokenIds[2] = 44;
         vm.prank(address(2));
-        fnd.transform(tokenIds, dog, false);
+        fnd.transform(tokenIds, dog);
         vrfCoordinator.fulfillRandomWords(requestId, address(fnd));
 
         assertEq(fnd.balanceOf(address(2)), balanceBefore - 3, "balance of user");
@@ -421,10 +342,10 @@ contract FndTransform is Initial {
         // transform dogs
         for (uint256 i; i + 6 < limit; i += 6) {
             uint256[] memory tokenIds = new uint256[](3);
-            tokenIds[0] = i;
-            tokenIds[1] = i + 2;
-            tokenIds[2] = i + 4;
-            fnd.transform(tokenIds, dog, false);
+            tokenIds[0] = teamAmount + i;
+            tokenIds[1] = teamAmount + i + 2;
+            tokenIds[2] = teamAmount + i + 4;
+            fnd.transform(tokenIds, dog);
 
             vrfCoordinator.fulfillRandomWords(requestId + j, address(fnd));
             j++;
@@ -440,10 +361,10 @@ contract FndTransform is Initial {
         // transform frogs
         for (uint256 i = 1; i + 6 < limit; i += 6) {
             uint256[] memory tokenIds = new uint256[](3);
-            tokenIds[0] = i;
-            tokenIds[1] = i + 2;
-            tokenIds[2] = i + 4;
-            fnd.transform(tokenIds, frog, false);
+            tokenIds[0] = teamAmount + i;
+            tokenIds[1] = teamAmount + i + 2;
+            tokenIds[2] = teamAmount + i + 4;
+            fnd.transform(tokenIds, frog);
 
             vrfCoordinator.fulfillRandomWords(requestId + j, address(fnd));
             j++;
@@ -455,7 +376,7 @@ contract FndTransform is Initial {
     function breedMultiple() public {
         vm.startPrank(address(2));
         for (uint256 i; i < (2000) / 10; i++) {
-            fnd.breedAndAdopt(10, false);
+            fnd.breedAndAdopt(10);
             vrfCoordinator.fulfillRandomWords(i + 1, address(fnd));
         }
         vm.stopPrank();
@@ -471,7 +392,7 @@ contract FndBreedAndStolen is Initial {
         fnd.setPublicMintStarted();
     }
 
-    function test_breedStakeAndNotStolenSinceNoSouped() public {
+    function test_breedAndNotStolenSinceNoSouped() public {
         vm.startPrank(stealer);
         deal(stealer, 10000 ether);
         mintEthSale();
@@ -482,27 +403,17 @@ contract FndBreedAndStolen is Initial {
         mucus.transfer(address(2), 1500 * 1e8 ether);
         vm.stopPrank();
 
-        // mint and stake chad dog
-        uint256 requestId = vrfCoordinator.s_nextRequestId();
-        uint256[] memory tokenIds = new uint256[](3);
-        tokenIds[0] = 0;
-        tokenIds[1] = 2;
-        tokenIds[2] = 4;
-
-        vm.startPrank(stealer);
-        fnd.transform(tokenIds, dog, true);
-        vrfCoordinator.fulfillRandomWords(requestId, address(fnd));
-
         // breed and get stolen
+        uint256 requestId = vrfCoordinator.s_nextRequestId();
         vm.prank(address(2));
-        fnd.breedAndAdopt(3, false);
-        vrfCoordinator.fulfillRandomWords(requestId + 1, address(fnd));
+        fnd.breedAndAdopt(3);
+        vrfCoordinator.fulfillRandomWords(requestId, address(fnd));
 
         assertEq(fnd.balanceOf(address(2)), 3, "balance of user");
         assertEq(fnd.ownerOf(2002), address(2), "owner of");
     }
 
-    function test_breedStakeAndNotStolenSinceSoupedUp() public {
+    function test_breedAndNotStolenSinceSoupedUp() public {
         vm.startPrank(stealer);
         deal(stealer, 10000 ether);
         mintEthSale();
@@ -516,24 +427,28 @@ contract FndBreedAndStolen is Initial {
         // mint and stake chad dog
         uint256 requestId = vrfCoordinator.s_nextRequestId();
         uint256[] memory tokenIds = new uint256[](3);
-        tokenIds[0] = 0;
-        tokenIds[1] = 2;
-        tokenIds[2] = 4;
+        tokenIds[0] = teamAmount + 0;
+        tokenIds[1] = teamAmount + 2;
+        tokenIds[2] = teamAmount + 4;
 
         vm.startPrank(stealer);
-        fnd.transform(tokenIds, dog, true);
+        fnd.transform(tokenIds, dog);
         vrfCoordinator.fulfillRandomWords(requestId, address(fnd));
+        uint256[] memory chadId = new uint256[](1);
+        chadId[0] = 6000;
+        mucusFarm.addManyToMucusFarm(chadId);
+        vm.stopPrank();
 
         // breed and get stolen
         vm.prank(address(2));
-        fnd.breedAndAdopt(10, false);
+        fnd.breedAndAdopt(10);
         vrfCoordinator.fulfillRandomWords(requestId + 1, address(fnd));
 
         assertEq(fnd.balanceOf(address(2)), 10, "balance of user");
         assertEq(fnd.ownerOf(2009), address(2), "owner of");
     }
 
-    function test_breedStakeAndStolen() public {
+    function test_breedAndStolen() public {
         vm.startPrank(stealer);
         deal(stealer, 10000 ether);
         mintEthSale();
@@ -547,17 +462,21 @@ contract FndBreedAndStolen is Initial {
         // mint and stake chad dog
         uint256 requestId = vrfCoordinator.s_nextRequestId();
         uint256[] memory tokenIds = new uint256[](3);
-        tokenIds[0] = 1;
-        tokenIds[1] = 3;
-        tokenIds[2] = 5;
+        tokenIds[0] = teamAmount + 1;
+        tokenIds[1] = teamAmount + 3;
+        tokenIds[2] = teamAmount + 5;
 
         vm.startPrank(stealer);
-        fnd.transform(tokenIds, frog, true);
+        fnd.transform(tokenIds, frog);
         vrfCoordinator.fulfillRandomWords(requestId, address(fnd));
+        uint256[] memory frogId = new uint256[](1);
+        frogId[0] = 6001;
+        mucusFarm.addManyToMucusFarm(frogId);
+        vm.stopPrank();
 
         // breed and get stolen
         vm.prank(address(2));
-        fnd.breedAndAdopt(3, false);
+        fnd.breedAndAdopt(3);
         vrfCoordinator.fulfillRandomWords(requestId + 1, address(fnd));
 
         assertEq(fnd.balanceOf(address(2)), 2, "balance of user");

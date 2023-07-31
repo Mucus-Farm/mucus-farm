@@ -19,7 +19,7 @@ contract SimFarming is Script {
 
         uint256[] memory tokenIds = new uint256[](1);
         tokenIds[0] = 0;
-        mucusFarm.addManyToMucusFarm(0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266, tokenIds);
+        mucusFarm.addManyToMucusFarm(tokenIds);
 
         vm.stopBroadcast();
     }

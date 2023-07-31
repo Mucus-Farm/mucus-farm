@@ -49,33 +49,24 @@ contract MucusFarm is IMucusFarm, IERC721Receiver, Context {
         _;
     }
 
-    function addManyToMucusFarm(address parent, uint256[] calldata tokenIds) external notPaused {
-        require(
-            _msgSender() == parent || _msgSender() == address(frogsAndDogs),
-            "sender must be the parent or the frogs and dogs contract"
-        );
-
+    function addManyToMucusFarm(uint256[] calldata tokenIds) external notPaused {
         // safe to use tokenId 0 since it's being minted to the team
         for (uint256 i; i < tokenIds.length; i++) {
-            if (_msgSender() != address(frogsAndDogs)) {
-                frogsAndDogs.transferFrom(_msgSender(), address(this), tokenIds[i]);
-            } else if (tokenIds[i] == 9393) {
-                continue;
+            if (_isFrog(tokenIds[i])) {
+                _addToMucusFarm(tokenIds[i], taxPerGiga, gigasStaked);
+            } else {
+                _addToMucusFarm(tokenIds[i], taxPerChad, chadsStaked);
             }
 
-            if (_isFrog(tokenIds[i])) {
-                _addToMucusFarm(parent, tokenIds[i], taxPerGiga, gigasStaked);
-            } else {
-                _addToMucusFarm(parent, tokenIds[i], taxPerChad, chadsStaked);
-            }
+            frogsAndDogs.transferFrom(_msgSender(), address(this), tokenIds[i]);
         }
 
-        emit TokensStaked(parent, tokenIds);
+        emit TokensStaked(_msgSender(), tokenIds);
     }
 
-    function _addToMucusFarm(address parent, uint256 tokenId, uint256 taxPer, uint256[] storage staked) internal {
+    function _addToMucusFarm(uint256 tokenId, uint256 taxPer, uint256[] storage staked) internal {
         farm[tokenId] = Stake({
-            owner: parent,
+            owner: _msgSender(),
             lockingEndTime: block.timestamp + 3 days,
             previousClaimTimestamp: block.timestamp,
             previousTaxPer: taxPer,
@@ -83,10 +74,6 @@ contract MucusFarm is IMucusFarm, IERC721Receiver, Context {
             gigaChadIndex: staked.length
         });
         if (tokenId >= INITIAL_GIGA_CHAD_TOKEN_ID) staked.push(tokenId);
-    }
-
-    function parseEther(uint256 amount) internal pure returns (uint256) {
-        return amount / 1 ether;
     }
 
     // Be mindful of the taxPerGiga and taxPerChad rates. Make sure to add on to it after the sheep mucus claim, else wise
