@@ -7,19 +7,20 @@ import {IUniswapV2Factory} from "v2-core/interfaces/IUniswapV2Factory.sol";
 import {IUniswapV2Router02} from "v2-periphery/interfaces/IUniswapV2Router02.sol";
 import {IUniswapV2Pair} from "v2-core/interfaces/IUniswapV2Pair.sol";
 import {IDividendsPairStaking} from "./interfaces/IDividendsPairStaking.sol";
+import {console} from "forge-std/console.sol";
 
 contract Mucus is ERC20 {
-    uint16 public stakerFee = 4;
-    uint16 public teamFee = 1;
-    uint16 public liquidityFee = 1;
+    uint16 public stakerFee = 40;
+    uint16 public teamFee = 10;
+    uint16 public liquidityFee = 10;
     uint16 public totalFee = teamFee + stakerFee + liquidityFee;
-    uint16 public denominator = 100;
+    uint16 public denominator = 1000;
     bool private _swapping;
     bool public swapEnabled = true;
 
     uint256 public constant MAX_SUPPLY = 9393 * 1e8 * 1e18;
     uint256 public constant INITIAL_MINT_SUPPLY = 3131 * 1e8 * 1e18;
-    uint256 public constant SWAP_TOKENS_AT_AMOUNT = 278787 * 1e18;
+    uint256 public constant SWAP_TOKENS_AT_AMOUNT = 313131 * 1e18;
 
     mapping(address => bool) private isFeeExempt;
     address private teamWallet;
