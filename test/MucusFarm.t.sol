@@ -27,6 +27,7 @@ contract Initial is Test {
     uint256 public constant tokenAmount = 100000000000 ether;
 
     uint256 public tokensPaidInEth = 2000; // 1/3 of the supply
+    uint256 public teamAmount = 20;
 
     Mucus public mucus;
     DividendsPairStaking public dps;
@@ -95,7 +96,7 @@ contract Initial is Test {
     function mintEthSale() public {
         vm.deal(address(2), 1000 ether);
         vm.startPrank(address(2));
-        for (uint256 i; i < tokensPaidInEth / 10; i++) {
+        for (uint256 i; i < (tokensPaidInEth - teamAmount) / 10; i++) {
             fnd.mint{value: ETH_MINT_PRICE * 10}(10);
         }
         vm.stopPrank();
@@ -109,9 +110,9 @@ contract Initial is Test {
         // transform dogs
         for (uint256 i; i + 6 < limit; i += 6) {
             uint256[] memory tokenIds = new uint256[](3);
-            tokenIds[0] = i;
-            tokenIds[1] = i + 2;
-            tokenIds[2] = i + 4;
+            tokenIds[0] = teamAmount + i;
+            tokenIds[1] = teamAmount + i + 2;
+            tokenIds[2] = teamAmount + i + 4;
             fnd.transform(tokenIds, dog);
 
             vrfCoordinator.fulfillRandomWords(requestId + j, address(fnd));
@@ -128,9 +129,9 @@ contract Initial is Test {
         // transform frogs
         for (uint256 i = 1; i + 6 < limit; i += 6) {
             uint256[] memory tokenIds = new uint256[](3);
-            tokenIds[0] = i;
-            tokenIds[1] = i + 2;
-            tokenIds[2] = i + 4;
+            tokenIds[0] = teamAmount + i;
+            tokenIds[1] = teamAmount + i + 2;
+            tokenIds[2] = teamAmount + i + 4;
             fnd.transform(tokenIds, frog);
 
             vrfCoordinator.fulfillRandomWords(requestId + j, address(fnd));
@@ -186,7 +187,7 @@ contract MucusFarmAddManyToFarm is Initial {
             tokenIds[i] = i;
         }
 
-        vm.expectRevert(bytes("sender must be the parent or the frogs and dogs contract"));
+        vm.expectRevert(bytes("ERC721: transfer from incorrect owner"));
         vm.prank(address(2));
         mucusFarm.addManyToMucusFarm(tokenIds);
     }
@@ -196,7 +197,7 @@ contract MucusFarmAddManyToFarm is Initial {
 
         uint256[] memory tokenIds = new uint256[](10);
         for (uint256 i; i < 10; i++) {
-            tokenIds[i] = i;
+            tokenIds[i] = teamAmount + i;
         }
 
         vm.expectEmit(true, true, true, true);
@@ -214,7 +215,7 @@ contract MucusFarmAddManyToFarm is Initial {
                 uint256 previousTaxPer,
                 uint256 previousSoupIndex,
                 uint256 gigaOrChadIndex
-            ) = mucusFarm.farm(i);
+            ) = mucusFarm.farm(teamAmount + i);
 
             assertEq(stakeOwner, address(2), "owner");
             assertEq(lockingEndTime, block.timestamp + 3 days, "lockingEndTime");
@@ -312,7 +313,7 @@ contract MucusFarmStakeAndUnstake is Initial {
 
         uint256[] memory tokenIds = new uint256[](10);
         for (uint256 i; i < 10; i++) {
-            tokenIds[i] = i;
+            tokenIds[i] = teamAmount + i;
         }
 
         vm.expectEmit(true, true, true, true);
@@ -320,7 +321,7 @@ contract MucusFarmStakeAndUnstake is Initial {
         mucusFarm.addManyToMucusFarm(tokenIds);
 
         for (uint256 i; i < 10; i++) {
-            assertEq(fnd.ownerOf(i), address(mucusFarm), "staked fnd");
+            assertEq(fnd.ownerOf(teamAmount + i), address(mucusFarm), "staked fnd");
         }
 
         vm.expectRevert(bytes("Cannot unstake frogs or dogs that are still locked"));
@@ -339,14 +340,14 @@ contract MucusFarmStakeAndUnstake is Initial {
                 uint256 previousTaxPer,
                 uint256 previousSoupIndex,
                 uint256 gigaOrChadIndex
-            ) = mucusFarm.farm(i);
+            ) = mucusFarm.farm(teamAmount + i);
             assertEq(stakeOwner, address(0), "stake owner");
             assertEq(lockingEndTime, 0, "lockingEndTime");
             assertEq(previousClaimTimestamp, 0, "previousClaimTimestamp");
             assertEq(previousTaxPer, 0, "previousTaxPer");
             assertEq(previousSoupIndex, 0, "previousSoupIndex");
             assertEq(gigaOrChadIndex, 0, "gigaOrChadIndex");
-            assertEq(fnd.ownerOf(i), address(2), "unstake fnd");
+            assertEq(fnd.ownerOf(teamAmount + i), address(2), "unstake fnd");
         }
     }
 }
@@ -363,7 +364,7 @@ contract MucusFarmFndEarnings is Initial {
     function test_revertsClaimMany() public {
         uint256[] memory tokenIds = new uint256[](10);
         for (uint256 i; i < 10; i++) {
-            tokenIds[i] = i;
+            tokenIds[i] = teamAmount + i;
         }
 
         vm.startPrank(address(2));
@@ -381,7 +382,7 @@ contract MucusFarmFndEarnings is Initial {
         vm.startPrank(address(2));
         uint256[] memory tokenIds = new uint256[](2);
         for (uint256 i; i < 2; i++) {
-            tokenIds[i] = i;
+            tokenIds[i] = teamAmount + i;
         }
 
         uint256 previousBlockTimestamp = block.timestamp;
@@ -402,7 +403,7 @@ contract MucusFarmFndEarnings is Initial {
         assertEq(mucusFarm.totalMucusMinted(), dailyMucusFarmed - dailyClaimedTax, "totalMucusMinted");
 
         for (uint256 i; i < 2; i++) {
-            (,, uint256 previousClaimTimestamp,, uint256 previousSoupIndex,) = mucusFarm.farm(i);
+            (,, uint256 previousClaimTimestamp,, uint256 previousSoupIndex,) = mucusFarm.farm(teamAmount + i);
 
             assertEq(previousClaimTimestamp, previousBlockTimestamp + 1 days, "previousClaimTimestamp");
             assertEq(previousSoupIndex, dps.currentSoupIndex(), "previousSoupIndex");
@@ -414,9 +415,9 @@ contract MucusFarmFndEarnings is Initial {
         uint256[] memory tokenIdsSet1 = new uint256[](2);
         uint256[] memory tokenIdsSet2 = new uint256[](2);
         for (uint256 i; i < 4; i++) {
-            tokenIds[i] = i;
-            if (i < 2) tokenIdsSet1[i] = i;
-            else tokenIdsSet2[i - 2] = i;
+            tokenIds[i] = teamAmount + i;
+            if (i < 2) tokenIdsSet1[i] = teamAmount + i;
+            else tokenIdsSet2[i - 2] = teamAmount + i;
         }
 
         uint256 previousBlockTimestamp = block.timestamp;
@@ -440,7 +441,7 @@ contract MucusFarmFndEarnings is Initial {
         assertEq(mucusFarm.totalMucusMinted(), (dailyMucusFarmed - dailyClaimedTax) * 3, "totalMucusMinted");
 
         for (uint256 i; i < 4; i++) {
-            (,, uint256 previousClaimTimestamp,, uint256 previousSoupIndex,) = mucusFarm.farm(i);
+            (,, uint256 previousClaimTimestamp,, uint256 previousSoupIndex,) = mucusFarm.farm(teamAmount + i);
 
             assertEq(previousClaimTimestamp, previousBlockTimestamp + 2 days, "previousClaimTimestamp");
             assertEq(previousSoupIndex, dps.currentSoupIndex(), "previousSoupIndex");
@@ -450,7 +451,7 @@ contract MucusFarmFndEarnings is Initial {
     function test_stakeThenDoubleClaim() public {
         uint256[] memory tokenIds = new uint256[](2);
         for (uint256 i; i < 2; i++) {
-            tokenIds[i] = i;
+            tokenIds[i] = teamAmount + i;
         }
 
         uint256 previousBlockTimestamp = block.timestamp;
@@ -474,7 +475,7 @@ contract MucusFarmFndEarnings is Initial {
         assertEq(mucusFarm.totalMucusMinted(), (dailyMucusFarmed - dailyClaimedTax) * 2, "totalMucusMinted");
 
         for (uint256 i; i < 2; i++) {
-            (,, uint256 previousClaimTimestamp,, uint256 previousSoupIndex,) = mucusFarm.farm(i);
+            (,, uint256 previousClaimTimestamp,, uint256 previousSoupIndex,) = mucusFarm.farm(teamAmount + i);
 
             assertEq(previousClaimTimestamp, previousBlockTimestamp + 2 days, "previousClaimTimestamp");
             assertEq(previousSoupIndex, dps.currentSoupIndex(), "previousSoupIndex");
@@ -486,9 +487,9 @@ contract MucusFarmFndEarnings is Initial {
         uint256[] memory tokenIdsSet1 = new uint256[](2);
         uint256[] memory tokenIdsSet2 = new uint256[](2);
         for (uint256 i; i < 4; i++) {
-            tokenIds[i] = i;
-            if (i < 2) tokenIdsSet1[i] = i;
-            else tokenIdsSet2[i - 2] = i;
+            tokenIds[i] = teamAmount + i;
+            if (i < 2) tokenIdsSet1[i] = teamAmount + i;
+            else tokenIdsSet2[i - 2] = teamAmount + i;
         }
 
         uint256 previousBlockTimestamp = block.timestamp;
@@ -514,7 +515,7 @@ contract MucusFarmFndEarnings is Initial {
         assertEq(mucusFarm.totalMucusMinted(), (dailyMucusFarmed - dailyClaimedTax) * 5, "totalMucusMinted");
 
         for (uint256 i; i < 4; i++) {
-            (,, uint256 previousClaimTimestamp,, uint256 previousSoupIndex,) = mucusFarm.farm(i);
+            (,, uint256 previousClaimTimestamp,, uint256 previousSoupIndex,) = mucusFarm.farm(teamAmount + i);
 
             assertEq(previousClaimTimestamp, previousBlockTimestamp + 3 days, "previousClaimTimestamp");
             assertEq(previousSoupIndex, dps.currentSoupIndex(), "previousSoupIndex");
@@ -539,8 +540,8 @@ contract MucusFarmGcEarnings is Initial {
         transformMultipleFrogs(100);
 
         vm.startPrank(address(2));
-        fnd.transferFrom(address(2), address(3), 101);
-        fnd.transferFrom(address(2), address(3), 102);
+        fnd.transferFrom(address(2), address(3), 121);
+        fnd.transferFrom(address(2), address(3), 122);
         vm.stopPrank();
     }
 
@@ -641,8 +642,8 @@ contract MucusFarmGcEarnings is Initial {
     function fndStakeThenClaim() public returns (uint256, uint256, uint256) {
         vm.startPrank(address(3));
         uint256[] memory tokenIds = new uint256[](2);
-        tokenIds[0] = 101;
-        tokenIds[1] = 102;
+        tokenIds[0] = 121;
+        tokenIds[1] = 122;
 
         uint256 fndMucusFarmed = DAILY_MUCUS_RATE * 2;
         uint256 fndClaimedTax = DAILY_MUCUS_RATE * 20 / 100;
@@ -659,8 +660,8 @@ contract MucusFarmGcEarnings is Initial {
     function fndClaim() public returns (uint256, uint256, uint256) {
         vm.startPrank(address(3));
         uint256[] memory tokenIds = new uint256[](2);
-        tokenIds[0] = 101;
-        tokenIds[1] = 102;
+        tokenIds[0] = 121;
+        tokenIds[1] = 122;
 
         uint256 fndMucusFarmed = DAILY_MUCUS_RATE * 2;
         uint256 fndClaimedTax = DAILY_MUCUS_RATE * 20 / 100;
@@ -943,7 +944,7 @@ contract MucusFarmSoupCycleEarnings is Initial {
 
     function stakeDog() public {
         uint256[] memory tokenIds = new uint256[](1);
-        tokenIds[0] = 0;
+        tokenIds[0] = 20;
 
         vm.prank(address(2));
         mucusFarm.addManyToMucusFarm(tokenIds);
@@ -951,7 +952,7 @@ contract MucusFarmSoupCycleEarnings is Initial {
 
     function claimDog() public {
         uint256[] memory tokenIds = new uint256[](1);
-        tokenIds[0] = 0;
+        tokenIds[0] = 20;
 
         vm.prank(address(2));
         mucusFarm.claimMany(tokenIds, false);
@@ -959,7 +960,7 @@ contract MucusFarmSoupCycleEarnings is Initial {
 
     function stakeFrog() public {
         uint256[] memory tokenIds = new uint256[](1);
-        tokenIds[0] = 1;
+        tokenIds[0] = 21;
 
         vm.prank(address(2));
         mucusFarm.addManyToMucusFarm(tokenIds);
@@ -967,7 +968,7 @@ contract MucusFarmSoupCycleEarnings is Initial {
 
     function claimFrog() public {
         uint256[] memory tokenIds = new uint256[](1);
-        tokenIds[0] = 1;
+        tokenIds[0] = 21;
 
         vm.prank(address(2));
         mucusFarm.claimMany(tokenIds, false);
@@ -999,7 +1000,7 @@ contract MucusFarmRescue is Initial {
     function test_revertsRescue() public {
         uint256[] memory tokenIds = new uint256[](10);
         for (uint256 i; i < 10; i++) {
-            tokenIds[i] = i;
+            tokenIds[i] = teamAmount + i;
         }
 
         vm.prank(address(2));
@@ -1018,14 +1019,14 @@ contract MucusFarmRescue is Initial {
     function test_rescue() public {
         uint256[] memory tokenIds = new uint256[](10);
         for (uint256 i; i < 10; i++) {
-            tokenIds[i] = i;
+            tokenIds[i] = teamAmount + i;
         }
 
         vm.prank(address(2));
         mucusFarm.addManyToMucusFarm(tokenIds);
 
         for (uint256 i; i < 10; i++) {
-            assertEq(fnd.ownerOf(i), address(mucusFarm));
+            assertEq(fnd.ownerOf(teamAmount + i), address(mucusFarm));
         }
 
         vm.prank(owner);
@@ -1033,7 +1034,7 @@ contract MucusFarmRescue is Initial {
         vm.prank(address(2));
         mucusFarm.rescue(tokenIds);
         for (uint256 i; i < 10; i++) {
-            assertEq(fnd.ownerOf(i), address(2));
+            assertEq(fnd.ownerOf(teamAmount + i), address(2));
         }
     }
 }
