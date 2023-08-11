@@ -32,7 +32,7 @@ contract FrogsAndDogs is IFrogsAndDogs, ERC721, VRFConsumerBaseV2, Ownable, Paus
     string public contractURI; // setup endpoint that grabs the images and denies access to images for tokenIds that aren't minted yet
 
     bool public publicMintStarted;
-    mapping(address => uint256) public whitelistMinted;
+    mapping(address => uint256) private whitelistMinted;
 
     // see https://docs.chain.link/docs/vrf/v2/subscription/supported-networks/#configurations
     bytes32 public immutable keyHash;
@@ -43,7 +43,7 @@ contract FrogsAndDogs is IFrogsAndDogs, ERC721, VRFConsumerBaseV2, Ownable, Paus
     // this limit based on the network that you select, the size of the request,
     // and the processing of the callback request in the fulfillRandomWords()
     // function.
-    uint32 public constant callbackGasLimit = 1000000000;
+    uint32 public constant callbackGasLimit = 500000;
 
     // The default is 3, but you can set this higher.
     uint16 public constant requestConfirmations = 3;
@@ -76,9 +76,10 @@ contract FrogsAndDogs is IFrogsAndDogs, ERC721, VRFConsumerBaseV2, Ownable, Paus
         subscriptionId = _subscriptionId;
         baseURI = _initialBaseURI;
         contractURI = _initialContractURI;
+        _mint(20);
     }
 
-    function whitelistMint(uint256 amount, bool stake, bytes32[] calldata proof) external whenNotPaused {
+    function whitelistMint(uint256 amount, bytes32[] calldata proof) external whenNotPaused {
         require(!publicMintStarted, "Public minting has already started");
         require(
             MerkleProof.verifyCalldata(proof, WHITELIST_MERKLE_ROOT, keccak256(abi.encodePacked(_msgSender()))),
@@ -88,38 +89,30 @@ contract FrogsAndDogs is IFrogsAndDogs, ERC721, VRFConsumerBaseV2, Ownable, Paus
         require(minted + amount < whitelistMintSupply, "All whitelist tokens have been minted");
         require(whitelistMinted[_msgSender()] + amount <= 10, "Cannot mint more than 10 whitelist tokens");
 
-        _mint(amount, stake);
+        _mint(amount);
         whitelistMinted[_msgSender()] += amount;
     }
 
-    function mint(uint256 amount, bool stake) external payable whenNotPaused {
+    function mint(uint256 amount) external payable whenNotPaused {
         require(publicMintStarted, "Public minting has not started yet");
         require(amount > 0 && amount <= 10, "Invalid mint amount");
         require(minted + amount <= tokensPaidInEth, "All Dogs and Frogs for sale have been minted");
         require(amount * ETH_MINT_PRICE == msg.value, "Invalid payment amount");
 
-        _mint(amount, stake);
+        _mint(amount);
     }
 
-    function _mint(uint256 amount, bool stake) internal {
-        uint256[] memory tokenIds = stake ? new uint256[](amount) : new uint256[](0);
-
-        for (uint256 i = 0; i < amount; i++) {
-            if (stake) {
-                _safeMint(address(mucusFarm), minted);
-                tokenIds[i] = minted;
-            } else {
-                _safeMint(_msgSender(), minted);
-            }
+    function _mint(uint256 amount) internal {
+        for (uint256 i = 0; i < amount;) {
+            _mint(_msgSender(), minted);
             minted++;
+            unchecked {
+                i++;
+            }
         }
-
-        if (stake) mucusFarm.addManyToMucusFarm(_msgSender(), tokenIds);
     }
 
-    // this funciton will request for the amount of eth needed to mint the amount of frogs and dogs
-    // TODO: pass in the price of eth in wei and use that to determine how much ETH should be sent in to cover the costs of the callback function
-    function breedAndAdopt(uint256 amount, bool stake) external payable whenNotPaused {
+    function breedAndAdopt(uint256 amount) external payable whenNotPaused {
         require(minted >= tokensPaidInEth, "Breeding not available yet");
         require(amount > 0 && amount <= 10, "Invalid mint amount");
         require(minted + amount <= FROGS_AND_DOGS_SUPPLY, "All Dogs and Frogs have been minted");
@@ -130,23 +123,15 @@ contract FrogsAndDogs is IFrogsAndDogs, ERC721, VRFConsumerBaseV2, Ownable, Paus
             vrfCoordinator.requestRandomWords(keyHash, subscriptionId, requestConfirmations, callbackGasLimit, 1);
         requests[RequestId] = Request({
             amount: amount,
-            fulfilled: false,
             transform: false,
             transformationType: Faction.FROG, // This doesn't matter here
-            stake: stake,
             parent: msg.sender
         });
 
         mucus.burn(_msgSender(), amount * MUCUS_MINT_PRICE);
-
-        emit RequestSent(RequestId, amount);
     }
 
-    function transform(uint256[] calldata tokenIds, Faction transformationType, bool stake)
-        external
-        payable
-        whenNotPaused
-    {
+    function transform(uint256[] calldata tokenIds, Faction transformationType) external payable whenNotPaused {
         require(tokenIds.length == 3 && _isCorrectTypes(tokenIds, transformationType), "Must use 3 of the same types");
         require(transformationType != Faction.FROG || gigasMinted + 2 <= GIGAS_MAX_SUPPLY, "All Gigas have been minted");
         require(transformationType != Faction.DOG || chadsMinted + 2 <= CHADS_MAX_SUPPLY, "All Chads have been minted");
@@ -154,14 +139,8 @@ contract FrogsAndDogs is IFrogsAndDogs, ERC721, VRFConsumerBaseV2, Ownable, Paus
         // Will revert if subscription is not set and funded.
         uint256 RequestId =
             vrfCoordinator.requestRandomWords(keyHash, subscriptionId, requestConfirmations, callbackGasLimit, 1);
-        requests[RequestId] = Request({
-            amount: 1,
-            fulfilled: false,
-            transform: true,
-            transformationType: transformationType,
-            stake: stake,
-            parent: _msgSender()
-        });
+        requests[RequestId] =
+            Request({amount: 1, transform: true, transformationType: transformationType, parent: _msgSender()});
 
         for (uint256 i; i < tokenIds.length;) {
             require(ownerOf(tokenIds[i]) == _msgSender(), "Must own all tokens");
@@ -171,64 +150,42 @@ contract FrogsAndDogs is IFrogsAndDogs, ERC721, VRFConsumerBaseV2, Ownable, Paus
             }
         }
         mucus.burn(_msgSender(), SUMMON_PRICE);
-
-        emit RequestSent(RequestId, 1);
     }
 
     function fulfillRandomWords(uint256 _requestId, uint256[] memory _randomWords) internal override {
-        require(!requests[_requestId].fulfilled, "request already fulfilled");
-
         uint256 rng = _randomWords[0];
-        requests[_requestId].fulfilled = true;
 
         if (!requests[_requestId].transform) {
-            mintOrStealFrogOrDog(
-                requests[_requestId].stake, requests[_requestId].amount, requests[_requestId].parent, rng
-            );
+            _mintOrStealFrogOrDog(requests[_requestId].amount, requests[_requestId].parent, rng);
         } else {
-            mintOrBustGigaOrChad(
-                requests[_requestId].transformationType, requests[_requestId].parent, requests[_requestId].stake, rng
-            );
+            _mintOrBustGigaOrChad(requests[_requestId].transformationType, requests[_requestId].parent, rng);
         }
-
-        emit RequestFulfilled(_requestId, requests[_requestId].amount);
     }
 
-    function mintOrStealFrogOrDog(bool stake, uint256 amount, address parent, uint256 rng) internal {
-        uint256[] memory tokenIds = stake ? new uint256[](amount) : new uint256[](0);
-
-        for (uint256 i = 0; i < amount; i++) {
+    function _mintOrStealFrogOrDog(uint256 amount, address parent, uint256 rng) internal {
+        for (uint256 i = 0; i < amount;) {
             address recipient = selectRecipient(rng, parent);
-            if (!stake || recipient != parent) {
-                _safeMint(recipient, minted);
-                if (stake) tokenIds[i] = 9393;
-            } else {
-                _safeMint(address(mucusFarm), minted);
-                tokenIds[i] = minted;
-            }
+            _mint(recipient, minted);
             minted++;
+            unchecked {
+                i++;
+            }
         }
-
-        if (stake) mucusFarm.addManyToMucusFarm(parent, tokenIds);
     }
 
-    function mintOrBustGigaOrChad(Faction transformationType, address parent, bool stake, uint256 rng) internal {
-        require(rng % 5 != 0, "Bust, summoning failed");
-
+    function _mintOrBustGigaOrChad(Faction transformationType, address parent, uint256 rng) internal {
         uint256 tokenId = transformationType == Faction.FROG ? gigasMinted : chadsMinted;
-        if (transformationType == Faction.FROG) {
-            _safeMint(stake ? address(mucusFarm) : parent, gigasMinted);
-            gigasMinted += 2;
-        } else {
-            _safeMint(stake ? address(mucusFarm) : parent, chadsMinted);
-            chadsMinted += 2;
+        if (rng % 5 != 0) {
+            if (transformationType == Faction.FROG) {
+                _mint(parent, tokenId);
+                gigasMinted += 2;
+            } else {
+                _mint(parent, tokenId);
+                chadsMinted += 2;
+            }
         }
 
-        if (stake) {
-            uint256[] memory tokenIds = new uint256[](1);
-            tokenIds[0] = tokenId;
-            mucusFarm.addManyToMucusFarm(parent, tokenIds);
-        }
+        emit Transformation(parent, tokenId, rng % 5 != 0);
     }
 
     function transferFrom(address from, address to, uint256 tokenId) public virtual override {
@@ -239,17 +196,10 @@ contract FrogsAndDogs is IFrogsAndDogs, ERC721, VRFConsumerBaseV2, Ownable, Paus
         _transfer(from, to, tokenId);
     }
 
-    /**
-     * the first 20% (ETH purchases) go to the minter
-     * the remaining 80% have a 10% chance to be given to a random staked wolf
-     * @param rng a random value to select a recipient from
-     * @param parent the address of the user that initiated the breeding request
-     * @return recipient address of the recipient (either the minter or the Wolf thief's owner)
-     */
     function selectRecipient(uint256 rng, address parent) internal view returns (address) {
         uint256 tokenId = minted;
         uint256 seed = uint256(keccak256(abi.encodePacked(rng, tokenId)));
-        if (seed % 10 != 0 || tokenId % 2 == uint256(dividendsPairStaking.getSoupedUp())) return parent; // 10% chance to steal if their side is not winning
+        if (seed % 10 != 0 || tokenId % 2 == uint256(dividendsPairStaking.getSoupedUp())) return parent; // 10% chance to steal if their faction is not winning
         // If it's minting a dog, chance for giga frog to steal. vice versa
         address thief =
             mucusFarm.randomGigaOrChad(seed, tokenId % 2 == 0 ? IMucusFarm.Faction.FROG : IMucusFarm.Faction.DOG);

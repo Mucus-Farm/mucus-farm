@@ -9,19 +9,16 @@ interface IFrogsAndDogs {
 
     struct Request {
         uint256 amount;
-        bool fulfilled;
-        bool stake;
         bool transform;
         Faction transformationType;
         address parent;
     }
 
-    event RequestSent(uint256 indexed RequestId, uint256 amount);
-    event RequestFulfilled(uint256 indexed RequestId, uint256 amount);
+    event Transformation(address indexed parent, uint256 indexed tokenId, bool transformSucceeded);
 
-    function mint(uint256 amount, bool stake) external payable;
-    function breedAndAdopt(uint256 amount, bool stake) external payable;
-    function transform(uint256[] calldata tokenIds, Faction transformationType, bool stake) external payable;
+    function mint(uint256 amount) external payable;
+    function breedAndAdopt(uint256 amount) external payable;
+    function transform(uint256[] calldata tokenIds, Faction transformationType) external payable;
     function setMucusFarm(address _mucusFarm) external;
     function withdraw() external;
     function setPaused(bool _paused) external;

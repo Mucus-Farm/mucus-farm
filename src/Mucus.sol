@@ -7,21 +7,28 @@ import {IUniswapV2Factory} from "v2-core/interfaces/IUniswapV2Factory.sol";
 import {IUniswapV2Router02} from "v2-periphery/interfaces/IUniswapV2Router02.sol";
 import {IUniswapV2Pair} from "v2-core/interfaces/IUniswapV2Pair.sol";
 import {IDividendsPairStaking} from "./interfaces/IDividendsPairStaking.sol";
+import {console} from "forge-std/console.sol";
 
 contract Mucus is ERC20 {
-    uint16 public stakerFee = 4;
-    uint16 public teamFee = 1;
-    uint16 public liquidityFee = 1;
+    uint16 public stakerFee = 40;
+    uint16 public teamFee = 10;
+    uint16 public liquidityFee = 10;
     uint16 public totalFee = teamFee + stakerFee + liquidityFee;
-    uint16 public denominator = 100;
+    uint16 public denominator = 1000;
+    bool public limitsInEffect = true;
+    bool public transferDelayEnabled = true;
     bool private _swapping;
-    bool public swapEnabled = true;
 
     uint256 public constant MAX_SUPPLY = 9393 * 1e8 * 1e18;
     uint256 public constant INITIAL_MINT_SUPPLY = 3131 * 1e8 * 1e18;
-    uint256 public constant SWAP_TOKENS_AT_AMOUNT = 278787 * 1e18;
+    uint256 public constant SWAP_TOKENS_AT_AMOUNT = 313131 * 1e18;
+    uint256 public constant MAX_TRANSACTION_AMOUNT = 3131 * 1e7 * 1e18;
+    uint256 public constant MAX_WALLET = 6262 * 1e7 * 1e18;
 
     mapping(address => bool) private isFeeExempt;
+    mapping(address => uint256) private _holderLastTransferTimestamp;
+    mapping(address => bool) private _isExcludedMaxTransactionAmount;
+
     address private teamWallet;
     address private _owner;
 
@@ -38,6 +45,8 @@ contract Mucus is ERC20 {
         isFeeExempt[address(router)] = true;
         isFeeExempt[address(this)] = true;
         isFeeExempt[msg.sender] = true;
+
+        _isExcludedMaxTransactionAmount[msg.sender] = true;
 
         _owner = msg.sender;
         teamWallet = _teamWallet;
@@ -70,6 +79,40 @@ contract Mucus is ERC20 {
     }
 
     function _transfer(address from, address to, uint256 amount) internal override {
+        if (amount == 0) {
+            super._transfer(from, to, 0);
+            return;
+        }
+
+        if (limitsInEffect) {
+            if (from != _owner && to != _owner && to != address(0) && !_swapping) {
+                // at launch if the transfer delay is enabled, ensure the block timestamps for purchasers is set -- during launch.
+                if (transferDelayEnabled) {
+                    if (to != _owner && to != address(router) && to != address(pair)) {
+                        require(
+                            _holderLastTransferTimestamp[tx.origin] < block.number,
+                            "_transfer:: Transfer Delay enabled.  Only one purchase per block allowed."
+                        );
+                        _holderLastTransferTimestamp[tx.origin] = block.number;
+                    }
+                }
+
+                //when buy
+                if (pair == from && !_isExcludedMaxTransactionAmount[to]) {
+                    require(amount <= MAX_TRANSACTION_AMOUNT, "Buy transfer amount exceeds the max transaction amount.");
+                    require(amount + balanceOf(to) <= MAX_WALLET, "Max wallet exceeded");
+                }
+                //when sell
+                else if (pair == to && !_isExcludedMaxTransactionAmount[from]) {
+                    require(
+                        amount <= MAX_TRANSACTION_AMOUNT, "Sell transfer amount exceeds the max transaction amount."
+                    );
+                } else if (!_isExcludedMaxTransactionAmount[to]) {
+                    require(amount + balanceOf(to) <= MAX_WALLET, "Max wallet exceeded");
+                }
+            }
+        }
+
         uint256 contractTokenBalance = balanceOf(address(this));
         bool canSwap = contractTokenBalance >= SWAP_TOKENS_AT_AMOUNT;
 
@@ -169,6 +212,33 @@ contract Mucus is ERC20 {
 
     function setIsFeeExempt(address _feeExempt) external onlyOwner {
         isFeeExempt[_feeExempt] = true;
+    }
+
+    function setStakerFee(uint16 _stakerFee) external onlyOwner {
+        stakerFee = _stakerFee;
+    }
+
+    function setTeamFee(uint16 _teamFee) external onlyOwner {
+        teamFee = _teamFee;
+    }
+
+    function setLiquidityFee(uint16 _liquidityFee) external onlyOwner {
+        liquidityFee = _liquidityFee;
+    }
+
+    function setIsExcludedFromMaxTransactionAmount(address _excludedFromMaxTransactionAmountAddress)
+        external
+        onlyOwner
+    {
+        _isExcludedMaxTransactionAmount[_excludedFromMaxTransactionAmountAddress] = true;
+    }
+
+    function disableTransferDelayEnabled() external onlyOwner {
+        transferDelayEnabled = false;
+    }
+
+    function disableLimitsInEffect() external onlyOwner {
+        limitsInEffect = false;
     }
 
     function withdraw() external onlyOwner {

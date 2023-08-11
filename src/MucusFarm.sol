@@ -49,44 +49,38 @@ contract MucusFarm is IMucusFarm, IERC721Receiver, Context {
         _;
     }
 
-    function addManyToMucusFarm(address parent, uint256[] calldata tokenIds) external notPaused {
-        require(
-            _msgSender() == parent || _msgSender() == address(frogsAndDogs),
-            "sender must be the parent or the frogs and dogs contract"
-        );
-
+    function addManyToMucusFarm(uint256[] calldata tokenIds) external notPaused {
         // safe to use tokenId 0 since it's being minted to the team
-        for (uint256 i; i < tokenIds.length; i++) {
-            if (_msgSender() != address(frogsAndDogs)) {
-                frogsAndDogs.transferFrom(_msgSender(), address(this), tokenIds[i]);
-            } else if (tokenIds[i] == 9393) {
-                continue;
+        uint256 _currentSoupIndex = dividendsPairStaking.currentSoupIndex();
+        for (uint256 i; i < tokenIds.length;) {
+            if (_isFrog(tokenIds[i])) {
+                _addToMucusFarm(tokenIds[i], taxPerGiga, gigasStaked, _currentSoupIndex);
+            } else {
+                _addToMucusFarm(tokenIds[i], taxPerChad, chadsStaked, _currentSoupIndex);
             }
 
-            if (_isFrog(tokenIds[i])) {
-                _addToMucusFarm(parent, tokenIds[i], taxPerGiga, gigasStaked);
-            } else {
-                _addToMucusFarm(parent, tokenIds[i], taxPerChad, chadsStaked);
+            frogsAndDogs.transferFrom(_msgSender(), address(this), tokenIds[i]);
+
+            unchecked {
+                i++;
             }
         }
 
-        emit TokensStaked(parent, tokenIds);
+        emit TokensStaked(_msgSender(), tokenIds);
     }
 
-    function _addToMucusFarm(address parent, uint256 tokenId, uint256 taxPer, uint256[] storage staked) internal {
+    function _addToMucusFarm(uint256 tokenId, uint256 taxPer, uint256[] storage staked, uint256 currentSoupIndex)
+        internal
+    {
         farm[tokenId] = Stake({
-            owner: parent,
+            owner: _msgSender(),
             lockingEndTime: block.timestamp + 3 days,
             previousClaimTimestamp: block.timestamp,
             previousTaxPer: taxPer,
-            previousSoupIndex: dividendsPairStaking.currentSoupIndex(),
+            previousSoupIndex: currentSoupIndex,
             gigaChadIndex: staked.length
         });
         if (tokenId >= INITIAL_GIGA_CHAD_TOKEN_ID) staked.push(tokenId);
-    }
-
-    function parseEther(uint256 amount) internal pure returns (uint256) {
-        return amount / 1 ether;
     }
 
     // Be mindful of the taxPerGiga and taxPerChad rates. Make sure to add on to it after the sheep mucus claim, else wise
@@ -97,21 +91,15 @@ contract MucusFarm is IMucusFarm, IERC721Receiver, Context {
         uint256 totalBurnableTax;
         uint256 totalClaimableGigaTax;
         uint256 totalClaimableChadTax;
+        uint256 _currentSoupIndex = dividendsPairStaking.currentSoupIndex();
 
-        // test to see if it does save on gas
-        // // cache in memory to save on gas
-        // uint256[] memory _gigasStaked = gigasStaked;
-        // uint256[] memory _chadsStaked = chadsStaked;
-        // uint256 _taxPerGiga = taxPerGiga;
-        // uint256 _taxPerChad = taxPerChad;
-
-        for (uint256 i; i < tokenIds.length; i++) {
+        for (uint256 i; i < tokenIds.length;) {
             Stake memory stake = farm[tokenIds[i]];
             require(stake.owner == _msgSender(), "Cannot claim rewards for frog or dog that you didn't stake");
 
             // calculate earnings
-            uint256 mucusRate = tokenIds[i] >= INITIAL_GIGA_CHAD_TOKEN_ID ? DAILY_MUCUS_RATE * 3 : DAILY_MUCUS_RATE;
-            totalMucusEarned += (block.timestamp - stake.previousClaimTimestamp) * mucusRate / 1 days;
+            totalMucusEarned += (block.timestamp - stake.previousClaimTimestamp)
+                * (tokenIds[i] >= INITIAL_GIGA_CHAD_TOKEN_ID ? DAILY_MUCUS_RATE * 3 : DAILY_MUCUS_RATE) / 1 days;
             (uint256 burnableTax, uint256 claimableTax) = _getTax(tokenIds[i]);
             if (_isFrog(tokenIds[i])) totalClaimableChadTax += claimableTax;
             else totalClaimableGigaTax += claimableTax;
@@ -125,11 +113,15 @@ contract MucusFarm is IMucusFarm, IERC721Receiver, Context {
             if (!unstake) {
                 stake.previousClaimTimestamp = block.timestamp;
                 stake.previousTaxPer = _isFrog(tokenIds[i]) ? taxPerGiga : taxPerChad;
-                stake.previousSoupIndex = dividendsPairStaking.currentSoupIndex();
+                stake.previousSoupIndex = _currentSoupIndex;
                 farm[tokenIds[i]] = stake;
             } else {
                 require(block.timestamp >= stake.lockingEndTime, "Cannot unstake frogs or dogs that are still locked");
                 _removeFromMucusFarm(tokenIds[i], stake, _isFrog(tokenIds[i]) ? gigasStaked : chadsStaked);
+            }
+
+            unchecked {
+                i++;
             }
         }
 
@@ -276,10 +268,14 @@ contract MucusFarm is IMucusFarm, IERC721Receiver, Context {
         require(rescueEnabled, "Rescue mode not enabled");
         uint256 tokenId;
 
-        for (uint256 i = 0; i < tokenIds.length; i++) {
+        for (uint256 i = 0; i < tokenIds.length;) {
             tokenId = tokenIds[i];
             require(farm[tokenId].owner == _msgSender(), "Cannot rescue frogs or dogs that you didn't stake");
             _removeFromMucusFarm(tokenId, farm[tokenId], _isFrog(tokenId) ? gigasStaked : chadsStaked);
+
+            unchecked {
+                i++;
+            }
         }
     }
 

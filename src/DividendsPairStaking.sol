@@ -62,9 +62,7 @@ contract DividendsPairStaking is IDividendsPairStaking {
             staker.previousDividendsPerDog = dividendsPerDog;
         }
 
-        // TODO: undo this
-        // staker.lockingEndDate = block.timestamp + 2 weeks;
-        staker.lockingEndDate = block.timestamp;
+        staker.lockingEndDate = block.timestamp + 2 weeks;
         staker.totalAmount += amount;
 
         if (faction == Faction.DOG) {
@@ -200,7 +198,6 @@ contract DividendsPairStaking is IDividendsPairStaking {
     }
 
     function _distributeDividend(Staker memory staker) internal {
-        // Staker memory staker = stakers[msg.sender];
         uint256 frogRewards = (dividendsPerFrog - staker.previousDividendsPerFrog) * staker.frogFactionAmount;
         uint256 dogRewards = (dividendsPerDog - staker.previousDividendsPerDog) * staker.dogFactionAmount;
 

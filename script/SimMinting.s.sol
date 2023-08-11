@@ -17,7 +17,7 @@ contract SimMinting is Script {
         IFrogsAndDogs fnd = IFrogsAndDogs(_fnd);
         IMucusFarm mucusFarm = IMucusFarm(_mucusFarm);
 
-        fnd.mint{value: ETH_MINT_PRICE}(1, true);
+        fnd.mint{value: ETH_MINT_PRICE}(1);
 
         vm.stopBroadcast();
     }

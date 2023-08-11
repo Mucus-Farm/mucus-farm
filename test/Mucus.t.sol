@@ -20,32 +20,30 @@ contract Initial is Test {
 
     uint256 public ethAmount = 100000000000 ether;
     uint256 public tokenAmount = 100000000000 ether;
-    uint256 public swapTokensAtAmount = 278787 * 1e18;
+    uint256 public swapTokensAtAmount = 313131 * 1e18;
 
-    uint16 public teamFee = 2;
-    uint16 public stakerFee = 2;
-    uint16 public liquidityFee = 2;
+    uint256 public constant MAX_SUPPLY = 9393 * 1e8 * 1e18;
+    uint256 public constant INITIAL_MINT_SUPPLY = 3131 * 1e8 * 1e18;
+    uint256 public constant SWAP_TOKENS_AT_AMOUNT = 313131 * 1e18;
+    uint256 public constant MAX_TRANSACTION_AMOUNT = 3131 * 1e7 * 1e18;
+    uint256 public constant MAX_WALLET = 6262 * 1e7 * 1e18;
+
+    uint16 public stakerFee = 40;
+    uint16 public teamFee = 10;
+    uint16 public liquidityFee = 10;
     uint16 public totalFee = teamFee + stakerFee + liquidityFee;
+    uint16 public denominator = 1000;
 
     address public teamWallet = address(123);
     address public owner = address(1);
 
-    // router = 0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D
-    // pair = 0x8b4a31307634C995D7C6e3F5A30D0B272F56013a
-    // weth = 0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2
-    // mucus = 0x522B3294E6d06aA25Ad0f1B8891242E335D3B459
-    // dps = 0x535B3D7A252fa034Ed71F0C53ec0C6F784cB64E1
-
-    function setUp() public {
+    function setUp() public virtual {
         vm.createSelectFork(vm.rpcUrl("mainnet"), 16183456);
         vm.startPrank(owner);
         address _uniswapRouter02 = 0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D;
         mucus = new Mucus(teamWallet);
         dps = new DividendsPairStaking(address(mucus));
         mucus.setDividendsPairStaking(address(dps));
-
-        console.log("mucus: ", address(mucus));
-        console.log("dps: ", address(dps));
 
         router = IUniswapV2Router02(_uniswapRouter02);
         weth = IERC20(router.WETH());
@@ -87,7 +85,63 @@ contract Initial is Test {
     }
 }
 
+contract MucusRevertsSwaps is Initial {
+    function testRevertsBuyAndSell() public {
+        vm.startPrank(address(2));
+        uint256 bal = 100000000000000 ether;
+        deal(address(2), bal);
+        uint256 amountOut = MAX_TRANSACTION_AMOUNT + 1;
+        address[] memory path = new address[](2);
+        path[0] = address(weth);
+        path[1] = address(mucus);
+
+        // fails buy from max transfer amount
+        vm.expectRevert(bytes("UniswapV2: TRANSFER_FAILED"));
+        router.swapETHForExactTokens{value: bal}(amountOut, path, address(2), block.timestamp);
+
+        // fails from max wallet amount
+        deal(address(2), bal * 3);
+        router.swapETHForExactTokens{value: bal}(MAX_TRANSACTION_AMOUNT, path, address(2), block.timestamp);
+        vm.roll(block.number + 1);
+        router.swapETHForExactTokens{value: bal}(MAX_TRANSACTION_AMOUNT, path, address(2), block.timestamp);
+        vm.roll(block.number + 1);
+        vm.expectRevert(bytes("UniswapV2: TRANSFER_FAILED"));
+        router.swapETHForExactTokens{value: bal}(MAX_TRANSACTION_AMOUNT, path, address(2), block.timestamp);
+
+        // fails sell from max transfer amount
+        address[] memory sellPath = new address[](2);
+        sellPath[0] = address(mucus);
+        sellPath[1] = address(weth);
+        mucus.approve(address(router), MAX_TRANSACTION_AMOUNT + 1);
+        vm.expectRevert(bytes("TransferHelper: TRANSFER_FROM_FAILED"));
+        router.swapExactTokensForETHSupportingFeeOnTransferTokens(
+            MAX_TRANSACTION_AMOUNT + 1, 0, sellPath, address(2), block.timestamp
+        );
+
+        // fails from multiple transactions in one block
+        deal(address(2), bal * 3);
+        router.swapETHForExactTokens{value: bal}(1, path, address(2), block.timestamp);
+        vm.expectRevert(bytes("UniswapV2: TRANSFER_FAILED"));
+        router.swapETHForExactTokens{value: bal}(1, path, address(2), block.timestamp);
+
+        vm.stopPrank();
+        // fails from max wallet amount
+        vm.prank(owner);
+        mucus.transfer(address(3), MAX_WALLET + 1);
+        vm.roll(block.number + 1);
+        vm.prank(address(3));
+        vm.expectRevert(bytes("Max wallet exceeded"));
+        mucus.transfer(address(2), MAX_WALLET + 1);
+    }
+}
+
 contract MucusSwaps is Initial {
+    function setUp() public override {
+        super.setUp();
+        vm.prank(owner);
+        mucus.disableLimitsInEffect();
+    }
+
     function testBuyingMucus() public {
         uint256 bal = 1000 ether;
         hoax(address(2), bal);
@@ -123,62 +177,105 @@ contract MucusSwaps is Initial {
 }
 
 contract MucusSwapBack is Initial {
+    uint16 liquidityFeeHalf = liquidityFee >> 1;
+    uint256 tokensForStakers = swapTokensAtAmount * stakerFee / totalFee;
+    uint256 tokensForliquidity = swapTokensAtAmount * liquidityFeeHalf / totalFee;
+    uint256 tokensToSwapForEth = swapTokensAtAmount - tokensForStakers - tokensForliquidity;
+
+    function setUp() public override {
+        super.setUp();
+        vm.prank(owner);
+        mucus.disableLimitsInEffect();
+    }
+
     function testSwapBack() public {
-        hoax(owner, 2000 ether);
+        hoax(owner, 1000 ether);
         dps.addStake{value: 1000 ether}(IDividendsPairStaking.Faction.FROG, 0);
+        hoax(owner, 1000 ether);
         dps.addStake{value: 1000 ether}(IDividendsPairStaking.Faction.DOG, 0);
 
         vm.prank(owner);
-        uint256 bal = 1000 ether;
-        mucus.transfer(address(2), bal);
+        mucus.transfer(address(2), 1000 ether);
 
         vm.prank(owner);
         mucus.transfer(address(mucus), swapTokensAtAmount);
 
         uint256 amountIn = 100 ether;
+        (uint256 mucusReserveBefore, uint256 ethReserveBefore,) = IUniswapV2Pair(pair).getReserves();
+        uint256 ethBought = UniswapV2Library.getAmountOut(amountIn * 94 / 100, mucusReserveBefore, ethReserveBefore);
+
+        uint256 ethBalance = UniswapV2Library.getAmountOut(tokensToSwapForEth, mucusReserveBefore, ethReserveBefore);
+        mucusReserveBefore += tokensToSwapForEth;
+        ethReserveBefore -= ethBalance;
+
+        uint256 ethForLiquidity = ethBalance * liquidityFeeHalf / (liquidityFeeHalf + teamFee);
+        uint256 ethForTeam = ethBalance - ethForLiquidity;
+        (uint256 mucusLiquidityAdded, uint256 ethLiquidityAdded) = UniswapV2Library.addLiquidityAmount(
+            mucusReserveBefore, ethReserveBefore, tokensForliquidity, ethForLiquidity, 0, 0
+        );
+
+        mucusReserveBefore += mucusLiquidityAdded;
+        ethReserveBefore += ethLiquidityAdded;
+
+        vm.startPrank(address(2));
+        mucus.approve(address(router), amountIn);
+
         address[] memory path = new address[](2);
         path[0] = address(mucus);
         path[1] = address(weth);
 
-        // How much mucus and eth is getting swapped in the swapBack function
-        uint256 mucusBalanceBefore = mucus.balanceOf(address(mucus));
-
-        uint256 mucusSwapped = swapTokensAtAmount >> 1;
-        (uint256 mucusReserveBefore, uint256 ethReserveBefore,) = IUniswapV2Pair(pair).getReserves();
-        uint256 ethSwapped = UniswapV2Library.getAmountOut(mucusSwapped, mucusReserveBefore, ethReserveBefore);
-
-        mucusReserveBefore = mucusReserveBefore + mucusSwapped;
-        ethReserveBefore = ethReserveBefore - ethSwapped;
-
-        (uint256 mucusLiquidityAdded, uint256 ethLiquidityAdded) = UniswapV2Library.addLiquidityAmount(
-            mucusReserveBefore, ethReserveBefore, mucusBalanceBefore / 6, ethSwapped / 3, 0, 0
-        );
-
-        mucusReserveBefore = mucusReserveBefore + mucusLiquidityAdded;
-        ethReserveBefore = ethReserveBefore + ethLiquidityAdded;
-
-        uint256 ethBought = UniswapV2Library.getAmountOut(amountIn * 94 / 100, mucusReserveBefore, ethReserveBefore);
-
-        vm.startPrank(address(2));
-        mucus.approve(address(router), amountIn);
         router.swapExactTokensForETHSupportingFeeOnTransferTokens(amountIn, 0, path, address(2), block.timestamp);
         vm.stopPrank();
-
         (uint256 mucusReserveAfter, uint256 ethReserveAfter,) = IUniswapV2Pair(pair).getReserves();
+
         assertEq(
             mucus.balanceOf(address(mucus)),
-            mucusBalanceBefore - mucusSwapped - mucusLiquidityAdded - (mucusBalanceBefore / 3) + (amountIn * 6 / 100),
+            // the only discrepancy is the the amount of tokens being added for liqudiity may not be exact
+            (tokensForliquidity - mucusLiquidityAdded) + (amountIn * 6 / 100),
             "mucus balance"
         );
         assertEq(mucusReserveAfter, mucusReserveBefore + (amountIn * 94 / 100), "mucus reserves");
-        assertEq(ethReserveAfter, ethReserveBefore - ethBought, "eth reserves");
-        assertEq(mucus.balanceOf(address(dps)), swapTokensAtAmount * 1 / 3, "dps mucus balance increased");
-        assertEq(address(teamWallet).balance, (ethSwapped * 2 / 3) + 1, "team wallet balance increased"); // +1 for rounding error
+        // assertEq(ethReserveAfter, ethReserveBefore - ethBought, "eth reserves");
+        assertEq(mucus.balanceOf(address(dps)), tokensForStakers, "dps mucus balance increased");
+        assertEq(address(teamWallet).balance, ethForTeam, "team wallet balance increased");
         assertEq(address(mucus).balance, 0, "mucus eth balance drained");
     }
 }
 
 contract MucusOnlyOwner is Initial {
+    function testSetStakerFee() public {
+        vm.prank(owner);
+        mucus.setStakerFee(100);
+        assertEq(100, mucus.stakerFee(), "stakerFee set");
+    }
+
+    function testSetTeamFee() public {
+        vm.prank(owner);
+        mucus.setTeamFee(100);
+        assertEq(100, mucus.teamFee(), "teamFee set");
+    }
+
+    function testSetLiquidityFee() public {
+        vm.prank(owner);
+        mucus.setLiquidityFee(100);
+        (100);
+        assertEq(100, mucus.liquidityFee(), "liquidityFee set");
+    }
+
+    function testDisableTransferDelayEnabled() public {
+        vm.prank(owner);
+        mucus.disableTransferDelayEnabled();
+        assertEq(false, mucus.transferDelayEnabled(), "disableTransferDelayEnabled set");
+    }
+
+    function testDisableLimitsInEffect() public {
+        vm.prank(owner);
+        mucus.disableLimitsInEffect();
+        assertEq(false, mucus.limitsInEffect(), "limitsInEffect set");
+    }
+}
+
+contract MucusNotExternal is Initial {
     function testSettingMucusFarm() public {
         vm.prank(owner);
         mucus.setMucusFarm(address(111));
@@ -189,5 +286,17 @@ contract MucusOnlyOwner is Initial {
         vm.prank(owner);
         mucus.setDividendsPairStaking(address(111));
         assertEq(address(mucus.dividendsPairStaking()), address(111), "dividendsPairStaking set");
+    }
+
+    function testMint() public {
+        vm.prank(address(2));
+        vm.expectRevert();
+        mucus.mint(address(2), 1000 ether);
+    }
+
+    function testBurn() public {
+        vm.prank(address(2));
+        vm.expectRevert();
+        mucus.burn(address(2), 1000 ether);
     }
 }

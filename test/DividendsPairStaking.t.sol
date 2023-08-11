@@ -21,11 +21,11 @@ contract Initial is Test {
 
     uint256 public ethAmount = 100000000000 ether;
     uint256 public tokenAmount = 100000000000 ether;
-    uint256 public swapTokensAtAmount = 278787 * 1e18;
+    uint256 public swapTokensAtAmount = 313131 * 1e18;
 
-    uint16 public teamFee = 2;
-    uint16 public stakerFee = 2;
-    uint16 public liquidityFee = 2;
+    uint16 public stakerFee = 40;
+    uint16 public teamFee = 10;
+    uint16 public liquidityFee = 10;
     uint16 public totalFee = teamFee + stakerFee + liquidityFee;
 
     IDividendsPairStaking.Faction frog = IDividendsPairStaking.Faction.FROG;
@@ -41,6 +41,7 @@ contract Initial is Test {
         mucus = new Mucus(teamWallet);
         dps = new DividendsPairStaking(address(mucus));
         mucus.setDividendsPairStaking(address(dps));
+        mucus.disableLimitsInEffect();
 
         router = IUniswapV2Router02(_uniswapRouter02);
         weth = IERC20(router.WETH());
