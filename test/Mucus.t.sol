@@ -22,6 +22,12 @@ contract Initial is Test {
     uint256 public tokenAmount = 100000000000 ether;
     uint256 public swapTokensAtAmount = 313131 * 1e18;
 
+    uint256 public constant MAX_SUPPLY = 9393 * 1e8 * 1e18;
+    uint256 public constant INITIAL_MINT_SUPPLY = 3131 * 1e8 * 1e18;
+    uint256 public constant SWAP_TOKENS_AT_AMOUNT = 313131 * 1e18;
+    uint256 public constant MAX_TRANSACTION_AMOUNT = 3131 * 1e7 * 1e18;
+    uint256 public constant MAX_WALLET = 6262 * 1e7 * 1e18;
+
     uint16 public stakerFee = 40;
     uint16 public teamFee = 10;
     uint16 public liquidityFee = 10;
@@ -31,7 +37,7 @@ contract Initial is Test {
     address public teamWallet = address(123);
     address public owner = address(1);
 
-    function setUp() public {
+    function setUp() public virtual {
         vm.createSelectFork(vm.rpcUrl("mainnet"), 16183456);
         vm.startPrank(owner);
         address _uniswapRouter02 = 0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D;
@@ -79,7 +85,63 @@ contract Initial is Test {
     }
 }
 
+contract MucusRevertsSwaps is Initial {
+    function testRevertsBuyAndSell() public {
+        vm.startPrank(address(2));
+        uint256 bal = 100000000000000 ether;
+        deal(address(2), bal);
+        uint256 amountOut = MAX_TRANSACTION_AMOUNT + 1;
+        address[] memory path = new address[](2);
+        path[0] = address(weth);
+        path[1] = address(mucus);
+
+        // fails buy from max transfer amount
+        vm.expectRevert(bytes("UniswapV2: TRANSFER_FAILED"));
+        router.swapETHForExactTokens{value: bal}(amountOut, path, address(2), block.timestamp);
+
+        // fails from max wallet amount
+        deal(address(2), bal * 3);
+        router.swapETHForExactTokens{value: bal}(MAX_TRANSACTION_AMOUNT, path, address(2), block.timestamp);
+        vm.roll(block.number + 1);
+        router.swapETHForExactTokens{value: bal}(MAX_TRANSACTION_AMOUNT, path, address(2), block.timestamp);
+        vm.roll(block.number + 1);
+        vm.expectRevert(bytes("UniswapV2: TRANSFER_FAILED"));
+        router.swapETHForExactTokens{value: bal}(MAX_TRANSACTION_AMOUNT, path, address(2), block.timestamp);
+
+        // fails sell from max transfer amount
+        address[] memory sellPath = new address[](2);
+        sellPath[0] = address(mucus);
+        sellPath[1] = address(weth);
+        mucus.approve(address(router), MAX_TRANSACTION_AMOUNT + 1);
+        vm.expectRevert(bytes("TransferHelper: TRANSFER_FROM_FAILED"));
+        router.swapExactTokensForETHSupportingFeeOnTransferTokens(
+            MAX_TRANSACTION_AMOUNT + 1, 0, sellPath, address(2), block.timestamp
+        );
+
+        // fails from multiple transactions in one block
+        deal(address(2), bal * 3);
+        router.swapETHForExactTokens{value: bal}(1, path, address(2), block.timestamp);
+        vm.expectRevert(bytes("UniswapV2: TRANSFER_FAILED"));
+        router.swapETHForExactTokens{value: bal}(1, path, address(2), block.timestamp);
+
+        vm.stopPrank();
+        // fails from max wallet amount
+        vm.prank(owner);
+        mucus.transfer(address(3), MAX_WALLET + 1);
+        vm.roll(block.number + 1);
+        vm.prank(address(3));
+        vm.expectRevert(bytes("Max wallet exceeded"));
+        mucus.transfer(address(2), MAX_WALLET + 1);
+    }
+}
+
 contract MucusSwaps is Initial {
+    function setUp() public override {
+        super.setUp();
+        vm.prank(owner);
+        mucus.disableLimitsInEffect();
+    }
+
     function testBuyingMucus() public {
         uint256 bal = 1000 ether;
         hoax(address(2), bal);
@@ -119,6 +181,12 @@ contract MucusSwapBack is Initial {
     uint256 tokensForStakers = swapTokensAtAmount * stakerFee / totalFee;
     uint256 tokensForliquidity = swapTokensAtAmount * liquidityFeeHalf / totalFee;
     uint256 tokensToSwapForEth = swapTokensAtAmount - tokensForStakers - tokensForliquidity;
+
+    function setUp() public override {
+        super.setUp();
+        vm.prank(owner);
+        mucus.disableLimitsInEffect();
+    }
 
     function testSwapBack() public {
         hoax(owner, 1000 ether);
@@ -171,6 +239,39 @@ contract MucusSwapBack is Initial {
         assertEq(mucus.balanceOf(address(dps)), tokensForStakers, "dps mucus balance increased");
         assertEq(address(teamWallet).balance, ethForTeam, "team wallet balance increased");
         assertEq(address(mucus).balance, 0, "mucus eth balance drained");
+    }
+}
+
+contract MucusOnlyOwner is Initial {
+    function testSetStakerFee() public {
+        vm.prank(owner);
+        mucus.setStakerFee(100);
+        assertEq(100, mucus.stakerFee(), "stakerFee set");
+    }
+
+    function testSetTeamFee() public {
+        vm.prank(owner);
+        mucus.setTeamFee(100);
+        assertEq(100, mucus.teamFee(), "teamFee set");
+    }
+
+    function testSetLiquidityFee() public {
+        vm.prank(owner);
+        mucus.setLiquidityFee(100);
+        (100);
+        assertEq(100, mucus.liquidityFee(), "liquidityFee set");
+    }
+
+    function testDisableTransferDelayEnabled() public {
+        vm.prank(owner);
+        mucus.disableTransferDelayEnabled();
+        assertEq(false, mucus.transferDelayEnabled(), "disableTransferDelayEnabled set");
+    }
+
+    function testDisableLimitsInEffect() public {
+        vm.prank(owner);
+        mucus.disableLimitsInEffect();
+        assertEq(false, mucus.limitsInEffect(), "limitsInEffect set");
     }
 }
 

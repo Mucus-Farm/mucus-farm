@@ -14,6 +14,8 @@ interface IFrogsAndDogs {
         address parent;
     }
 
+    event Transformation(address indexed parent, uint256 indexed tokenId, bool transformSucceeded);
+
     function mint(uint256 amount) external payable;
     function breedAndAdopt(uint256 amount) external payable;
     function transform(uint256[] calldata tokenIds, Faction transformationType) external payable;

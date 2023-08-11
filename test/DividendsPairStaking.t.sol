@@ -41,6 +41,7 @@ contract Initial is Test {
         mucus = new Mucus(teamWallet);
         dps = new DividendsPairStaking(address(mucus));
         mucus.setDividendsPairStaking(address(dps));
+        mucus.disableLimitsInEffect();
 
         router = IUniswapV2Router02(_uniswapRouter02);
         weth = IERC20(router.WETH());

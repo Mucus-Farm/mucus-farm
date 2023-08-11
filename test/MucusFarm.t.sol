@@ -66,6 +66,7 @@ contract Initial is Test {
         mucus.setDividendsPairStaking(address(dps));
         mucus.setMucusFarm(address(mucusFarm));
         mucus.setFrogsAndDogs(address(fnd));
+        mucus.disableLimitsInEffect();
 
         fnd.setMucusFarm(address(mucusFarm));
         fnd.setPublicMintStarted();

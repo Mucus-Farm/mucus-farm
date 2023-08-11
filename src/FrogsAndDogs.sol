@@ -32,7 +32,7 @@ contract FrogsAndDogs is IFrogsAndDogs, ERC721, VRFConsumerBaseV2, Ownable, Paus
     string public contractURI; // setup endpoint that grabs the images and denies access to images for tokenIds that aren't minted yet
 
     bool public publicMintStarted;
-    mapping(address => uint256) public whitelistMinted;
+    mapping(address => uint256) private whitelistMinted;
 
     // see https://docs.chain.link/docs/vrf/v2/subscription/supported-networks/#configurations
     bytes32 public immutable keyHash;
@@ -43,7 +43,7 @@ contract FrogsAndDogs is IFrogsAndDogs, ERC721, VRFConsumerBaseV2, Ownable, Paus
     // this limit based on the network that you select, the size of the request,
     // and the processing of the callback request in the fulfillRandomWords()
     // function.
-    uint32 public constant callbackGasLimit = 2000000;
+    uint32 public constant callbackGasLimit = 500000;
 
     // The default is 3, but you can set this higher.
     uint16 public constant requestConfirmations = 3;
@@ -112,8 +112,6 @@ contract FrogsAndDogs is IFrogsAndDogs, ERC721, VRFConsumerBaseV2, Ownable, Paus
         }
     }
 
-    // this funciton will request for the amount of eth needed to mint the amount of frogs and dogs
-    // TODO: pass in the price of eth in wei and use that to determine how much ETH should be sent in to cover the costs of the callback function
     function breedAndAdopt(uint256 amount) external payable whenNotPaused {
         require(minted >= tokensPaidInEth, "Breeding not available yet");
         require(amount > 0 && amount <= 10, "Invalid mint amount");
@@ -158,13 +156,13 @@ contract FrogsAndDogs is IFrogsAndDogs, ERC721, VRFConsumerBaseV2, Ownable, Paus
         uint256 rng = _randomWords[0];
 
         if (!requests[_requestId].transform) {
-            mintOrStealFrogOrDog(requests[_requestId].amount, requests[_requestId].parent, rng);
+            _mintOrStealFrogOrDog(requests[_requestId].amount, requests[_requestId].parent, rng);
         } else {
-            mintOrBustGigaOrChad(requests[_requestId].transformationType, requests[_requestId].parent, rng);
+            _mintOrBustGigaOrChad(requests[_requestId].transformationType, requests[_requestId].parent, rng);
         }
     }
 
-    function mintOrStealFrogOrDog(uint256 amount, address parent, uint256 rng) internal {
+    function _mintOrStealFrogOrDog(uint256 amount, address parent, uint256 rng) internal {
         for (uint256 i = 0; i < amount;) {
             address recipient = selectRecipient(rng, parent);
             _mint(recipient, minted);
@@ -175,16 +173,19 @@ contract FrogsAndDogs is IFrogsAndDogs, ERC721, VRFConsumerBaseV2, Ownable, Paus
         }
     }
 
-    function mintOrBustGigaOrChad(Faction transformationType, address parent, uint256 rng) internal {
-        require(rng % 5 != 0, "Bust, summoning failed");
-
-        if (transformationType == Faction.FROG) {
-            _mint(parent, gigasMinted);
-            gigasMinted += 2;
-        } else {
-            _mint(parent, chadsMinted);
-            chadsMinted += 2;
+    function _mintOrBustGigaOrChad(Faction transformationType, address parent, uint256 rng) internal {
+        uint256 tokenId = transformationType == Faction.FROG ? gigasMinted : chadsMinted;
+        if (rng % 5 != 0) {
+            if (transformationType == Faction.FROG) {
+                _mint(parent, tokenId);
+                gigasMinted += 2;
+            } else {
+                _mint(parent, tokenId);
+                chadsMinted += 2;
+            }
         }
+
+        emit Transformation(parent, tokenId, rng % 5 != 0);
     }
 
     function transferFrom(address from, address to, uint256 tokenId) public virtual override {

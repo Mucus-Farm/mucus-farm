@@ -76,6 +76,7 @@ contract Initial is Test {
 
         mucus.setMucusFarm(address(mucusFarm));
         mucus.setFrogsAndDogs(address(fnd));
+        mucus.disableLimitsInEffect();
 
         vrfCoordinator.addConsumer(_subscriptionId, address(fnd));
 
@@ -242,6 +243,8 @@ contract FndBreedAndAdopt is Initial {
 }
 
 contract FndTransform is Initial {
+    event Transformation(address indexed parent, uint256 indexed tokenId, bool transformSucceeded);
+
     function setUp() public override {
         super.setUp();
         vm.startPrank(address(owner));
@@ -303,6 +306,9 @@ contract FndTransform is Initial {
         tokenIds[2] = 24;
         vm.prank(address(2));
         fnd.transform(tokenIds, dog);
+
+        vm.expectEmit(true, true, true, true);
+        emit Transformation(address(2), 6000, true);
         vrfCoordinator.fulfillRandomWords(requestId, address(fnd));
 
         assertEq(fnd.balanceOf(address(2)), balanceBefore - 3 + 1, "balance of user");
@@ -329,6 +335,9 @@ contract FndTransform is Initial {
         tokenIds[2] = 44;
         vm.prank(address(2));
         fnd.transform(tokenIds, dog);
+
+        vm.expectEmit(true, true, true, true);
+        emit Transformation(address(2), 6006, false);
         vrfCoordinator.fulfillRandomWords(requestId, address(fnd));
 
         assertEq(fnd.balanceOf(address(2)), balanceBefore - 3, "balance of user");
