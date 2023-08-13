@@ -27,9 +27,9 @@ contract FrogsAndDogs is IFrogsAndDogs, ERC721, VRFConsumerBaseV2, Ownable, Paus
     uint256 public chadsMinted = 6000;
 
     uint256 public whitelistMintSupply = 1000;
-    uint256 public tokensPaidInEth = 2000; // 1/3 of the supply
-    string public baseURI; // setup endpoint that grabs the images and denies access to images for tokenIds that aren't minted yet
-    string public contractURI; // setup endpoint that grabs the images and denies access to images for tokenIds that aren't minted yet
+    uint256 public tokensPaidInEth = 2000;
+    string public baseURI;
+    string public contractURI;
 
     bool public publicMintStarted;
     mapping(address => uint256) private whitelistMinted;
@@ -37,12 +37,6 @@ contract FrogsAndDogs is IFrogsAndDogs, ERC721, VRFConsumerBaseV2, Ownable, Paus
     // see https://docs.chain.link/docs/vrf/v2/subscription/supported-networks/#configurations
     bytes32 public immutable keyHash;
 
-    // Depends on the number of requested values that you want sent to the
-    // fulfillRandomWords() function. Storing each word costs about 20,000 gas,
-    // so 100,000 is a safe default for this example contract. Test and adjust
-    // this limit based on the network that you select, the size of the request,
-    // and the processing of the callback request in the fulfillRandomWords()
-    // function.
     uint32 public constant callbackGasLimit = 500000;
 
     // The default is 3, but you can set this higher.
