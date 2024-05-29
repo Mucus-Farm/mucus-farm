@@ -1,5 +1,9 @@
 # Implementation Notes
 Here are some notes from way back about how this contract system works
+This is a project I did for a client that fell through, so I took this opportunity to open it up to being public.
+This project was supposed to be a variation of Wolf Game, but with some pokemon like evolution mechanics mixed in
+From the project, the most notable file I’d say is MucusFarm.sol
+I remember putting in a bit of time to figure out the mechanics for it
 
 ### $Mucus
 - 6% transaction fees
